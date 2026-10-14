@@ -10,7 +10,7 @@ description = "A dumb, environment and client agnostic relay of arbitrary messag
 
 [dependencies]
 aide = { version = "0.13.2", features = ["axum", "scalar"] }
-axum = "0.7.9"
+axum = "0.8.9"
 axum-jsonschema = { version = "0.8.0", features = ["aide"] }
 dotenvy = "0.15.7"
 redis = { version = "1.5.0", default-features = false, features = ["connection-manager", "tokio-rustls-comp", "tls-rustls-webpki-roots"] }
