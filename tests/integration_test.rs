@@ -762,6 +762,29 @@ async fn test_case_insensitive_full_round_trip() {
     assert_eq!(rv["response"]["iv"], "rt-resp-iv");
 }
 
+#[tokio::test]
+async fn test_put_request_is_staging_only() {
+    let app = common::test_app().await;
+    let route = format!("/request/{}", fresh_id());
+    let payload = json!({"iv": "staging-iv", "payload": "staging-ciphertext"});
+    let (status, _) = common::put(&app, &route, &payload).await;
+
+    let staging = std::env::var("ENVIRONMENT")
+        .is_ok_and(|value| value.trim().eq_ignore_ascii_case("staging"));
+    if staging {
+        assert_eq!(status, 201);
+        let (status, body) = common::get(&app, &route).await;
+        assert_eq!(status, 200);
+        let body: Value = serde_json::from_str(&body).expect("request JSON");
+        assert_eq!(body["iv"], payload["iv"]);
+        assert_eq!(body["payload"], payload["payload"]);
+        assert_eq!(common::get(&app, &route).await.0, 404);
+    } else {
+        assert_eq!(status, 405);
+        assert_eq!(common::get(&app, &route).await.0, 404);
+    }
+}
+
 /// Test OpenAPI documentation endpoint exists
 #[tokio::test]
 async fn test_openapi_endpoint() {
@@ -772,6 +795,16 @@ async fn test_openapi_endpoint() {
 
     let json: Value = serde_json::from_str(&body).expect("Failed to parse JSON");
     assert!(json.get("openapi").is_some());
+    for path in ["/request/{request_id}", "/response/{request_id}"] {
+        assert!(json["paths"][path]["get"].is_object(), "missing GET {path}");
+        assert!(
+            json["paths"][path]["head"].is_object(),
+            "missing HEAD {path}"
+        );
+    }
+    let schema =
+        &json["paths"]["/request"]["post"]["requestBody"]["content"]["application/json"]["schema"];
+    assert!(schema.is_object(), "POST /request must document its body");
 }
 
 // ---------------------------------------------------------------------------

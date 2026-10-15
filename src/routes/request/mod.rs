@@ -28,13 +28,13 @@ pub fn handler() -> ApiRouter {
     let mut router = ApiRouter::new()
         .api_route("/request", post_route(post::handler))
         .api_route(
-            "/request/:request_id",
+            "/request/{request_id}",
             head_route(head::handler).get(get::handler),
         )
         .layer(cors);
 
     if environment == "staging" {
-        router = router.api_route("/request/:request_id", put_route(put::handler));
+        router = router.api_route("/request/{request_id}", put_route(put::handler));
     }
 
     router
