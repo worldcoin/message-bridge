@@ -17,7 +17,7 @@ axum = { workspace = true }
 axum-jsonschema = { workspace = true }
 dotenvy = { workspace = true }
 redis = { workspace = true }
-reqwest-012 = { workspace = true }
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
 rustls = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
@@ -27,6 +27,7 @@ tokio = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
+webpki-root-certs = { workspace = true }
 
 [build-dependencies]
 chrono = { workspace = true }
