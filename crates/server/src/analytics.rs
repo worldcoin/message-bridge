@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest_012::{Client, Url};
+use reqwest::{Client, Url};
 use serde::Serialize;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_millis(500);
@@ -23,11 +23,16 @@ impl Analytics {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be built.
-    pub fn new(response_fetched_url: Url) -> Result<Self, reqwest_012::Error> {
+    pub fn new(response_fetched_url: Url) -> Result<Self, reqwest::Error> {
         let _provider_install_result = rustls::crypto::ring::default_provider().install_default();
+        let roots = webpki_root_certs::TLS_SERVER_ROOT_CERTS
+            .iter()
+            .map(|cert| reqwest::Certificate::from_der(cert))
+            .collect::<Result<Vec<_>, _>>()?;
         let client = Client::builder()
             // App Backend's WAF rejects requests without a User-Agent header.
             .user_agent("wallet-bridge")
+            .tls_certs_only(roots)
             .timeout(REQUEST_TIMEOUT)
             .build()?;
 
