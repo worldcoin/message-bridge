@@ -79,36 +79,3 @@ Integration tests build the bridge in-process and drive it directly, so the only
 docker-compose -f docker-compose.test.yml up -d
 cargo test
 ```
-
-## Rust client
-
-`crates/client` contains `message-bridge-client`, independent of the server and
-application protocols. It supports publishing and taking requests, polling response
-state and submitting responses. Callers supply unique, high-entropy request ids and
-already encrypted `iv` / `payload` strings; the client does not perform encryption.
-Native TLS trusts bundled Mozilla roots; WASM uses browser TLS.
-
-The client can use the real server in integration tests:
-
-```rust,no_run
-use message_bridge::test_util::TestServer;
-use message_bridge_client::BridgeClient;
-
-# async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-let server = TestServer::start("redis://127.0.0.1:6379").await?;
-let client = BridgeClient::new(server.base_url().parse()?)?;
-// Exercise the application with client.
-server.shutdown().await?;
-# Ok(())
-# }
-```
-
-The client/server contract checks live in `crates/client/tests/bridge.rs` and run
-with `cargo test --workspace --all-features` against `REDIS_URL`.
-
-## Releases
-
-`message-bridge` and `message-bridge-client` share the workspace version and are
-published by release-plz using crates.io trusted publishing. See
-[the release guide](docs/release.md) for the release process, first-publication
-steps and trusted-publisher settings.
