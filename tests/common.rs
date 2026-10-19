@@ -1,6 +1,6 @@
 //! In-process test server for the message bridge.
 //!
-//! Integration tests build the real application router via [`world_id_bridge::app`]
+//! Integration tests build the real application router via [`message_bridge::app`]
 
 #![allow(dead_code, reason = "used in integration tests")]
 
@@ -9,12 +9,12 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Method, Request};
 use http_body_util::BodyExt;
+use message_bridge::analytics::Analytics;
+use message_bridge::app;
+use message_bridge::utils::{AppOverride, AppOverrides};
 use redis::aio::ConnectionManager;
 use serde_json::Value;
 use tower::ServiceExt;
-use world_id_bridge::analytics::Analytics;
-use world_id_bridge::app;
-use world_id_bridge::utils::{AppOverride, AppOverrides};
 
 /// App-override fixture the override tests assert against. Injected directly
 /// into the router by the harness, so those tests need no `APP_URL_OVERRIDES`

@@ -1162,6 +1162,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "message-bridge"
+version = "0.1.0"
+dependencies = [
+ "aide",
+ "axum",
+ "axum-jsonschema",
+ "chrono",
+ "dotenvy",
+ "http-body-util",
+ "redis",
+ "reqwest",
+ "rustls",
+ "schemars",
+ "serde",
+ "serde_json",
+ "telemetry-batteries",
+ "tokio",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "metrics"
 version = "0.24.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1765,9 +1789,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "log",
  "once_cell",
@@ -2953,30 +2977,6 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
-
-[[package]]
-name = "world-id-bridge"
-version = "0.1.0"
-dependencies = [
- "aide",
- "axum",
- "axum-jsonschema",
- "chrono",
- "dotenvy",
- "http-body-util",
- "redis",
- "reqwest",
- "rustls",
- "schemars",
- "serde",
- "serde_json",
- "telemetry-batteries",
- "tokio",
- "tower",
- "tower-http 0.7.1",
- "tracing",
- "uuid",
-]
 
 [[package]]
 name = "writeable"

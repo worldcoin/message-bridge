@@ -5,8 +5,8 @@ use redis::aio::ConnectionManager;
 use std::env;
 use std::sync::Arc;
 
-use world_id_bridge::analytics::Analytics;
-use world_id_bridge::utils::AppOverrides;
+use message_bridge::analytics::Analytics;
+use message_bridge::utils::AppOverrides;
 
 #[tokio::main]
 async fn main() {
@@ -51,7 +51,7 @@ async fn main() {
     let app_overrides = Arc::new(load_app_overrides());
     let analytics = load_analytics(env::var("ANALYTICS_CALLBACK_URL")).map(Arc::new);
 
-    world_id_bridge::server::start(redis, app_overrides, analytics).await;
+    message_bridge::server::start(redis, app_overrides, analytics).await;
 }
 
 fn load_analytics(value: Result<String, env::VarError>) -> Option<Analytics> {
