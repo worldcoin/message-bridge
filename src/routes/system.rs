@@ -32,7 +32,7 @@ pub struct RootResponse {
 async fn get_info() -> Json<RootResponse> {
     Json(RootResponse {
         docs_url: "/docs".to_string(),
-        repo_url: "https://github.com/worldcoin/wallet-bridge".to_string(),
+        repo_url: "https://github.com/worldcoin/message-bridge".to_string(),
         version: AppVersion {
             semver: env!("CARGO_PKG_VERSION").to_string(),
             compile_time: env!("STATIC_BUILD_DATE").to_string(),
