@@ -10,7 +10,7 @@ async fn serves_the_production_router_and_shuts_down() {
         std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_owned());
     let server = TestServer::start(&redis_url).await.unwrap();
     let _provider_install_result = rustls::crypto::ring::default_provider().install_default();
-    let client = reqwest::Client::builder()
+    let client = reqwest_012::Client::builder()
         .timeout(Duration::from_secs(2))
         .build()
         .unwrap();

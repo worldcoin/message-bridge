@@ -18,7 +18,7 @@ axum = { workspace = true }
 axum-jsonschema = { workspace = true }
 dotenvy = { workspace = true }
 redis = { workspace = true }
-reqwest = { workspace = true }
+reqwest-012 = { workspace = true }
 rustls = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }

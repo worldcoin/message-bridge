@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::{Client, Url};
+use reqwest_012::{Client, Url};
 use serde::Serialize;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_millis(500);
@@ -23,7 +23,7 @@ impl Analytics {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be built.
-    pub fn new(response_fetched_url: Url) -> Result<Self, reqwest::Error> {
+    pub fn new(response_fetched_url: Url) -> Result<Self, reqwest_012::Error> {
         let _provider_install_result = rustls::crypto::ring::default_provider().install_default();
         let client = Client::builder()
             // App Backend's WAF rejects requests without a User-Agent header.
