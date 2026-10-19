@@ -31,27 +31,3 @@ allow = [
 
 [advisories]
 ignore = []
-
-[bans]
-# Upstream crates require incompatible major versions; keep exemptions version-specific.
-skip = [
-    { name = "getrandom", version = "=0.2.17" },
-    { name = "getrandom", version = "=0.3.4" },
-    { name = "hashbrown", version = "=0.16.1" },
-    { name = "r-efi", version = "=5.3.0" },
-    { name = "syn", version = "=2.0.119" },
-    { name = "thiserror", version = "=1.0.69" },
-    { name = "thiserror-impl", version = "=1.0.69" },
-    { name = "tower-http", version = "=0.6.11" },
-    { name = "tracing-serde", version = "=0.1.3" },
-    { name = "windows-sys", version = "=0.48.0" },
-    { name = "windows-sys", version = "=0.52.0" },
-    { name = "windows-targets", version = "=0.48.5" },
-    { name = "windows_aarch64_gnullvm", version = "=0.48.5" },
-    { name = "windows_aarch64_msvc", version = "=0.48.5" },
-    { name = "windows_i686_gnu", version = "=0.48.5" },
-    { name = "windows_i686_msvc", version = "=0.48.5" },
-    { name = "windows_x86_64_gnu", version = "=0.48.5" },
-    { name = "windows_x86_64_gnullvm", version = "=0.48.5" },
-    { name = "windows_x86_64_msvc", version = "=0.48.5" },
-]
