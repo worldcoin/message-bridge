@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "HTTP client for the World ID message bridge"
-repository = "https://github.com/worldcoin/wallet-bridge"
+repository = "https://github.com/worldcoin/message-bridge"
 
 [dependencies]
 backon = { version = "1.6", default-features = false, features = ["std", "tokio-sleep", "gloo-timers-sleep"] }
