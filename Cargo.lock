@@ -3144,11 +3144,11 @@ dependencies = [
  "tower-http",
  "tracing",
  "uuid",
- "world-id-bridge-client",
+ "message-bridge-client",
 ]
 
 [[package]]
-name = "world-id-bridge-client"
+name = "message-bridge-client"
 version = "0.1.0"
 dependencies = [
  "backon",

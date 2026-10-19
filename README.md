@@ -82,7 +82,7 @@ cargo test
 
 ## Rust client and test server
 
-`crates/client` contains `world-id-bridge-client`, a standalone HTTP client with no
+`crates/client` contains `message-bridge-client`, a standalone HTTP client with no
 server, Redis, or application-protocol dependencies. It supports publishing and taking
 requests, polling response state, and submitting responses. Callers supply unique,
 high-entropy request ids and already encrypted `iv` / `payload` strings. It does not
@@ -95,7 +95,7 @@ overrides or analytics callbacks:
 
 ```rust,no_run
 use world_id_bridge::test_util::TestServer;
-use world_id_bridge_client::BridgeClient;
+use message_bridge_client::BridgeClient;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 let server = TestServer::start("redis://127.0.0.1:6379").await?;
