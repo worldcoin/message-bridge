@@ -94,7 +94,7 @@ tests. It binds an ephemeral loopback port and runs the production router, with 
 overrides or analytics callbacks:
 
 ```rust,no_run
-use world_id_bridge::test_util::TestServer;
+use message_bridge::test_util::TestServer;
 use message_bridge_client::BridgeClient;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

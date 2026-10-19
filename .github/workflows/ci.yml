@@ -69,7 +69,7 @@ jobs:
         with:
           push: false
           load: true
-          tags: world-id-bridge-ci:latest
+          tags: message-bridge-ci:latest
           cache-from: type=gha
           cache-to: "type=gha,mode=max"
           platforms: linux/amd64
@@ -81,21 +81,21 @@ jobs:
             -e TELEMETRY_PRESET=datadog \
             -e TELEMETRY_SERVICE_NAME=wallet-bridge \
             -e TELEMETRY_DATADOG_ENDPOINT=http://localhost:8126 \
-            --name world-id-bridge-ci-container world-id-bridge-ci:latest
+            --name message-bridge-ci-container message-bridge-ci:latest
 
           # Wait for the application to start
           sleep 10
 
           # Output logs to GitHub action
-          docker logs world-id-bridge-ci-container
+          docker logs message-bridge-ci-container
 
       - name: Health check Docker container
         run: curl -f http://0.0.0.0:8000/
 
       - name: Clean up
         run: |
-          docker stop world-id-bridge-ci-container
-          docker rm world-id-bridge-ci-container
+          docker stop message-bridge-ci-container
+          docker rm message-bridge-ci-container
 
   deny:
     name: Cargo deny

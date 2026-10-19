@@ -1,7 +1,7 @@
 #![cfg(feature = "test-util")]
 
+use message_bridge::test_util::TestServer;
 use message_bridge_client::{BridgeClient, BridgeError, EncryptedPayload, ResponseState};
-use world_id_bridge::test_util::TestServer;
 
 #[tokio::test]
 async fn client_exercises_production_single_use_routes() {

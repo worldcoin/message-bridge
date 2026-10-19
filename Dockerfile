@@ -33,8 +33,8 @@ FROM scratch
 WORKDIR /app
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/world-id-bridge /app/world-id-bridge
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/message-bridge /app/message-bridge
 
 USER 100
 EXPOSE 8000
-CMD ["/app/world-id-bridge"]
+CMD ["/app/message-bridge"]
