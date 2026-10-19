@@ -6,7 +6,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-authors = ["Miguel Piedrafita <rust@miguel.build>"]
+authors = ["World Contributors"]
 repository = "https://github.com/worldcoin/message-bridge"
 readme = "README.md"
 

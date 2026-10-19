@@ -79,20 +79,3 @@ Integration tests build the bridge in-process and drive it directly, so the only
 docker-compose -f docker-compose.test.yml up -d
 cargo test
 ```
-
-## Cargo workspace
-
-The root `Cargo.toml` is a virtual workspace. Common package metadata (including the
-version) and dependency requirements live in `workspace.package` and
-`workspace.dependencies`. Member crates inherit them with `workspace = true`.
-
-`crates/server` contains the `message-bridge` library and executable. The library
-exports `app(...)` for embedding the production router; the executable configures
-Redis, analytics and telemetry before starting it. Run all workspace checks from
-the repository root:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features
-cargo test --workspace --all-features
-```
