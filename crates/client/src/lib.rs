@@ -21,9 +21,8 @@ const OPERATION_TIMEOUT: Duration = Duration::from_mins(1);
 
 /// A client for one bridge deployment.
 ///
-/// Transport failures, `429` and server errors are retried with bounded backoff and jitter.
-/// Reading a request or a response is single-use, so a retry after a lost reply can find the
-/// message gone.
+/// Writes retry transport failures, `429` and server errors with bounded backoff and jitter.
+/// Single-use reads are never retried: a failed read may already have consumed the message.
 #[derive(Clone, Debug)]
 pub struct BridgeClient {
     http: reqwest::Client,
@@ -159,6 +158,7 @@ impl BridgeClient {
 
     /// Stores the encrypted response (`PUT /response/:id`). The bridge answers `201` once it
     /// stored it; a `400` or `409` after a failed attempt can mean that attempt was stored.
+    /// These statuses remain errors because storage cannot be confirmed.
     ///
     /// # Errors
     /// Returns a transport, timeout or unexpected-status error.
@@ -180,7 +180,7 @@ impl BridgeClient {
 
     async fn read<T: DeserializeOwned>(&self, url: Url) -> Result<Option<T>, BridgeError> {
         bounded(async {
-            let response = self.send(self.http.get(url)).await?;
+            let response = self.http.get(url).send().await?;
             match response.status() {
                 StatusCode::OK => read_json(response).await.map(Some),
                 StatusCode::NOT_FOUND => Ok(None),
