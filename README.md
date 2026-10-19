@@ -79,3 +79,38 @@ Integration tests build the bridge in-process and drive it directly, so the only
 docker-compose -f docker-compose.test.yml up -d
 cargo test
 ```
+
+## Rust client and test server
+
+`crates/client` contains `world-id-bridge-client`, a standalone HTTP client with no
+server, Redis, or application-protocol dependencies. It supports publishing and taking
+requests, polling response state, and submitting responses. Callers supply unique,
+high-entropy request ids and already encrypted `iv` / `payload` strings. It does not
+perform encryption. Native TLS trusts bundled Mozilla roots; WASM uses browser TLS.
+
+The server library exports `app(...)` for embedding and `server::start(...)` for the
+executable. Enable `test-util` to use `test_util::TestServer` in downstream integration
+tests. It binds an ephemeral loopback port and runs the production router, with no app
+overrides or analytics callbacks:
+
+```rust,no_run
+use world_id_bridge::test_util::TestServer;
+use world_id_bridge_client::BridgeClient;
+
+# async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+let server = TestServer::start("redis://127.0.0.1:6379").await?;
+let client = BridgeClient::new(server.base_url().parse()?)?;
+// Exercise the application with `client`.
+server.shutdown().await?;
+# Ok(())
+# }
+```
+
+Redis must already be running (the test helper does not start infrastructure or flush
+data). Use unique ids or a dedicated instance; messages retain the production TTL.
+Dropping the handle aborts the server, while `shutdown()` waits for it and reports
+failures. Run the full suite, including the client against the real server, with:
+
+```bash
+REDIS_URL=redis://127.0.0.1:6379 cargo test --workspace --all-features
+```
