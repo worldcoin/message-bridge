@@ -105,3 +105,10 @@ server.shutdown().await?;
 
 The client/server contract checks live in `crates/client/tests/bridge.rs` and run
 with `cargo test --workspace --all-features` against `REDIS_URL`.
+
+## Releases
+
+`message-bridge` and `message-bridge-client` share the workspace version and are
+published by release-plz using crates.io trusted publishing. See
+[the release guide](docs/release.md) for the release process, first-publication
+steps and trusted-publisher settings.
