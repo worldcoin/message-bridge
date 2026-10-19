@@ -31,15 +31,15 @@ jobs:
           toolchain: stable
 
       - name: Check code formatting
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --all-features
+        run: cargo clippy --workspace --all-targets --all-features
 
       - name: Build
         run: |
           sudo apt-get update && sudo apt-get install -y musl-tools
-          cargo build --release --locked --target x86_64-unknown-linux-musl
+          cargo build --workspace --release --locked --target x86_64-unknown-linux-musl
 
   docker:
     name: Test Docker build
@@ -143,4 +143,4 @@ jobs:
           toolchain: stable
 
       - name: Run integration tests
-        run: cargo test
+        run: cargo test --workspace --all-features

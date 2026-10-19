@@ -1,0 +1,34 @@
+[package]
+name = "message-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+publish = false
+description = "A dumb, environment and client agnostic relay of arbitrary messages. It lets two parties share an arbitrary message where parties can gossip a symmetric key off-band"
+
+[dependencies]
+aide = { workspace = true }
+axum = { workspace = true }
+axum-jsonschema = { workspace = true }
+dotenvy = { workspace = true }
+redis = { workspace = true }
+reqwest = { workspace = true }
+rustls = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+telemetry-batteries = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[build-dependencies]
+chrono = { workspace = true }
+
+[dev-dependencies]
+http-body-util = { workspace = true }
+tower = { workspace = true }
