@@ -79,3 +79,18 @@ Integration tests build the bridge in-process and drive it directly, so the only
 docker-compose -f docker-compose.test.yml up -d
 cargo test
 ```
+
+### Callback reliability
+
+Callbacks make at most three attempts with a two-second request timeout (500 ms
+connect timeout). Network failures, 408, 429 and 5xx are retried with full jitter
+(up to 500 ms then 1 s). Retry-After values (seconds or HTTP dates) up to five seconds are honored;
+longer delays stop delivery.
+A shared limit of 128 active callbacks bounds memory and outbound load. Capacity
+exhaustion drops the callback, not the proof. Callbacks remain in-memory best effort
+and may be lost during process shutdown.
+
+`analytics_callback_attempted`, `analytics_callback_retried`,
+`analytics_callback_outcome` (tagged by outcome), and `analytics_missing_receipt`
+are emitted under `message_bridge`. An accepted callback records HTTP acceptance,
+not proof persistence or RP acknowledgement. No receipt is used as a metric tag.

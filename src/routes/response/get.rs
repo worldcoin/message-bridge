@@ -97,10 +97,17 @@ pub(super) async fn handler(
         )
         .increment(1);
 
-        if let (Some(analytics), Some(tracking_receipt)) =
-            (analytics, stored_response.tracking_receipt)
-        {
-            analytics.send_response_fetched_event(tracking_receipt);
+        match (analytics, stored_response.tracking_receipt) {
+            (Some(analytics), Some(tracking_receipt)) => {
+                analytics.send_response_fetched_event(tracking_receipt);
+            }
+            (_, None) => {
+                telemetry_batteries::reexports::metrics::counter!(
+                    "message_bridge.analytics_missing_receipt"
+                )
+                .increment(1);
+            }
+            (None, Some(_)) => {}
         }
 
         return Ok(Json(Response {
