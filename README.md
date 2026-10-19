@@ -79,3 +79,27 @@ Integration tests build the bridge in-process and drive it directly, so the only
 docker-compose -f docker-compose.test.yml up -d
 cargo test
 ```
+
+## Test server
+
+Enable the server crate's `test-util` feature to use `message_bridge::test_util::TestServer`
+in downstream integration tests. It binds an ephemeral loopback port and runs the
+production router against a caller-provided Redis, with app overrides and analytics
+disabled:
+
+```rust,no_run
+use message_bridge::test_util::TestServer;
+
+# async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+let server = TestServer::start("redis://127.0.0.1:6379").await?;
+// Pass server.base_url() to the application under test.
+server.shutdown().await?;
+# Ok(())
+# }
+```
+
+Redis must already be running. Use unique ids or a dedicated instance; the helper
+does not flush data and stored messages retain the production TTL. Dropping the
+handle aborts the server; `shutdown()` waits for it and reports failures. Run
+`REDIS_URL=redis://127.0.0.1:6379 cargo test --workspace --all-features` to include
+the test-server check.
