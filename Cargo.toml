@@ -1,18 +1,22 @@
-[package]
-license = "MIT"
-edition = "2021"
-version = "0.1.0"
-name = "message-bridge"
-publish = false
-authors = ["Miguel Piedrafita <rust@miguel.build>"]
-repository = "https://github.com/worldcoin/message-bridge"
-description = "A dumb, environment and client agnostic relay of arbitrary messages. It lets two parties share an arbitrary message where parties can gossip a symmetric key off-band"
+[workspace]
+members = ["crates/server"]
+resolver = "2"
 
-[dependencies]
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["World Contributors"]
+repository = "https://github.com/worldcoin/message-bridge"
+readme = "README.md"
+
+[workspace.dependencies]
 aide = { version = "0.15.1", features = ["axum", "scalar"] }
 axum = "0.8.9"
 axum-jsonschema = { version = "0.9.1", features = ["aide"] }
+chrono = "0.4.45"
 dotenvy = "0.15.7"
+http-body-util = "0.1.5"
 redis = { version = "1.7.1", default-features = false, features = ["connection-manager", "tokio-rustls-comp", "tls-rustls-webpki-roots"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
@@ -21,13 +25,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 telemetry-batteries = { version = "0.4.1", default-features = false, features = ["metrics-statsd"] }
 tokio = { version = "1.53.2", features = ["full"] }
+tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["cors"] }
 tracing = { version = "0.1.44", features = ["log"] }
 uuid = { version = "1.27.0", features = ["v4", "serde"] }
-
-[build-dependencies]
-chrono = "0.4.45"
-
-[dev-dependencies]
-http-body-util = "0.1.5"
-tower = { version = "0.5.3", features = ["util"] }

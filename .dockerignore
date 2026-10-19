@@ -1,6 +1,5 @@
 target
 Dockerfile
-README.md
 Tiltfile
 docker-compose.test.yml
 
