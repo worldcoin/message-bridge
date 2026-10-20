@@ -33,7 +33,7 @@ pub fn handler() -> ApiRouter {
 
     ApiRouter::new()
         .api_route(
-            "/response/:request_id",
+            "/response/{request_id}",
             get(get::handler)
                 .head(head::handler)
                 .put(put::handler)

@@ -21,19 +21,13 @@ allow = [
     "CC0-1.0",
     "CDLA-Permissive-2.0",
     "ISC",
-    "LicenseRef-ring",
     "MIT",
+    "MIT-0", # borrow-or-share, via axum-jsonschema.
     "MPL-2.0", # File-level copyleft; transitive through telemetry-batteries.
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "Unlicense",
     "Zlib",
 ]
-
-[[licenses.clarify]]
-expression = "LicenseRef-ring"
-license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
-name = "ring"
 
 [advisories]
 ignore = []
