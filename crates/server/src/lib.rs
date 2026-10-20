@@ -14,6 +14,9 @@ pub mod routes;
 pub mod server;
 pub mod utils;
 
+#[cfg(feature = "test-util")]
+pub mod test_util;
+
 /// Assemble the fully-wired application router.
 ///
 /// Shared by the binary (via [`server::start`]) and the integration tests so

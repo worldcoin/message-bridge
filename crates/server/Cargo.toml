@@ -9,6 +9,9 @@ readme.workspace = true
 publish = false
 description = "A dumb, environment and client agnostic relay of arbitrary messages. It lets two parties share an arbitrary message where parties can gossip a symmetric key off-band"
 
+[features]
+test-util = []
+
 [dependencies]
 aide = { workspace = true }
 axum = { workspace = true }
