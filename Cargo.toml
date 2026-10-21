@@ -33,4 +33,4 @@ tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["cors"] }
 tracing = { version = "0.1.44", features = ["log"] }
 uuid = { version = "1.27.0", features = ["v4", "serde"] }
-webpki-root-certs = "1"
+webpki-root-certs = "1.0.10"
