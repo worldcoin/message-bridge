@@ -60,7 +60,7 @@ async fn rejects_invalid_responses_and_unsupported_base_urls() {
         ));
     }
     let app = axum::Router::new().route(
-        "/request/:id",
+        "/request/{id}",
         axum::routing::get(
             |axum::extract::Path(id): axum::extract::Path<String>| async move {
                 match id.as_str() {
@@ -177,7 +177,7 @@ async fn response_write_rejections_remain_errors_after_retries() {
             let attempts = Arc::new(AtomicUsize::new(0));
             let received = attempts.clone();
             let app = axum::Router::new().route(
-                "/response/:id",
+                "/response/{id}",
                 axum::routing::put(move || {
                     let attempt = received.fetch_add(1, Ordering::SeqCst);
                     async move {
