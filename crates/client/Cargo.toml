@@ -1,0 +1,27 @@
+[package]
+name = "message-bridge-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "HTTP client for the World ID message bridge"
+
+[dependencies]
+backon = { workspace = true }
+futures-util = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { workspace = true, features = ["rustls"] }
+webpki-root-certs = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+axum = { workspace = true }
+message-bridge = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true }
+uuid = { workspace = true }
