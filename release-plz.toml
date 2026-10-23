@@ -1,0 +1,29 @@
+[workspace]
+release = false
+publish = false
+release_always = false
+repo_url = "https://github.com/worldcoin/message-bridge"
+changelog_update = false
+git_release_enable = true
+git_release_type = "auto"
+pr_labels = ["release"]
+
+[[package]]
+name = "message-bridge"
+release = true
+publish = true
+publish_all_features = true
+version_group = "message-bridge"
+changelog_update = true
+changelog_path = "CHANGELOG.md"
+changelog_include = ["message-bridge-client"]
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
+
+[[package]]
+name = "message-bridge-client"
+release = true
+publish = true
+version_group = "message-bridge"
+git_tag_enable = false
+git_release_enable = false
