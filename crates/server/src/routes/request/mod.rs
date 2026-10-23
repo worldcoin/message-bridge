@@ -14,16 +14,30 @@ mod put;
 
 pub(super) const REQ_PREFIX: &str = "req:";
 
-pub fn handler() -> ApiRouter {
-    let environment = env::var("ENVIRONMENT")
-        .unwrap_or_else(|_| "unknown".to_string())
-        .trim()
-        .to_lowercase();
-
-    router(environment == "staging")
+/// Deployment environment, as far as the request routes care.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Environment {
+    /// Enables the staging-only `PUT /request/{request_id}`.
+    Staging,
+    Other,
 }
 
-fn router(staging_put: bool) -> ApiRouter {
+impl Environment {
+    fn from_env() -> Self {
+        let environment = env::var("ENVIRONMENT").unwrap_or_default();
+        if environment.trim().eq_ignore_ascii_case("staging") {
+            Self::Staging
+        } else {
+            Self::Other
+        }
+    }
+}
+
+pub fn handler() -> ApiRouter {
+    router(Environment::from_env())
+}
+
+fn router(environment: Environment) -> ApiRouter {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_headers(AllowHeaders::any())
@@ -36,7 +50,7 @@ fn router(staging_put: bool) -> ApiRouter {
             head_route(head::handler).get(get::handler),
         );
 
-    if staging_put {
+    if environment == Environment::Staging {
         router = router.api_route("/request/{request_id}", put_route(put::handler));
     }
 
@@ -54,12 +68,12 @@ mod tests {
     };
     use tower::ServiceExt;
 
-    use super::router;
+    use super::{router, Environment};
 
     const ORIGIN: &str = "http://127.0.0.1:4173";
 
-    async fn send(staging_put: bool, request: Request<Body>) -> axum::response::Response {
-        Router::from(router(staging_put))
+    async fn send(environment: Environment, request: Request<Body>) -> axum::response::Response {
+        Router::from(router(environment))
             .oneshot(request)
             .await
             .expect("router service is infallible")
@@ -77,19 +91,19 @@ mod tests {
 
     #[tokio::test]
     async fn request_by_id_answers_cors_preflight() {
-        for staging_put in [false, true] {
+        for environment in [Environment::Other, Environment::Staging] {
             for method in [Method::GET, Method::HEAD, Method::PUT] {
-                let response = send(staging_put, preflight(&method)).await;
+                let response = send(environment, preflight(&method)).await;
 
                 assert_eq!(
                     response.status(),
                     StatusCode::OK,
-                    "preflight {method} (staging_put: {staging_put})"
+                    "preflight {method} ({environment:?})"
                 );
                 assert_eq!(
                     response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
                     "*",
-                    "preflight {method} (staging_put: {staging_put})"
+                    "preflight {method} ({environment:?})"
                 );
             }
         }
@@ -105,7 +119,7 @@ mod tests {
             .expect("valid PUT request");
 
         // The handler rejects this bare request; only the CORS headers matter.
-        let response = send(true, request).await;
+        let response = send(Environment::Staging, request).await;
 
         assert_eq!(response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
     }
