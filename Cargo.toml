@@ -23,7 +23,7 @@ message-bridge = { path = "crates/server", version = "0.1.0" }
 redis = { version = "1.7.1", default-features = false, features = ["connection-manager", "tokio-rustls-comp", "tls-rustls-webpki-roots"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
-schemars = { version = "0.9.0", features = ["uuid1"] }
+schemars = { version = "1.2.3", features = ["uuid1"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 telemetry-batteries = { version = "0.4.1", default-features = false, features = ["metrics-statsd"] }
