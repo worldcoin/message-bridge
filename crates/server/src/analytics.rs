@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use reqwest::{Client, Url};
 use serde::Serialize;
+use telemetry_batteries::reexports::metrics;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_millis(500);
 
@@ -43,6 +44,7 @@ impl Analytics {
     }
 
     pub fn send_response_fetched_event(&self, tracking_receipt: String) {
+        metrics::counter!("message_bridge.analytics_callback.attempt").increment(1);
         let client = self.client.clone();
         let url = self.response_fetched_url.clone();
         let _handle = tokio::spawn(async move {
@@ -54,14 +56,29 @@ impl Analytics {
 
             match result {
                 Ok(response) if response.status().is_success() => {}
-                Ok(response) => tracing::warn!(
-                    status = %response.status(),
-                    "Failed to send response-fetched analytics event"
-                ),
-                Err(error) => tracing::warn!(
-                    error = %error,
-                    "Failed to send response-fetched analytics event"
-                ),
+                Ok(response) => {
+                    metrics::counter!(
+                        "message_bridge.analytics_callback.http_error",
+                        "status_code" => response.status().as_u16().to_string()
+                    )
+                    .increment(1);
+                    tracing::warn!(
+                        status = %response.status(),
+                        "Failed to send response-fetched analytics event"
+                    );
+                }
+                Err(error) => {
+                    if error.is_timeout() {
+                        metrics::counter!("message_bridge.analytics_callback.timeout").increment(1);
+                    } else {
+                        metrics::counter!("message_bridge.analytics_callback.request_error")
+                            .increment(1);
+                    }
+                    tracing::warn!(
+                        error = %error,
+                        "Failed to send response-fetched analytics event"
+                    );
+                }
             }
         });
     }
