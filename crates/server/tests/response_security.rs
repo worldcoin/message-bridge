@@ -104,6 +104,7 @@ async fn authorization_preserves_single_use_and_reservation() {
         after["response_read_token_digest"],
         initial["response_read_token_digest"]
     );
+    assert_eq!(after["allow_existence_check"], b"false");
     let (status, collision) = common::post(&app, "/request", &json!({
         "request_id":id,"iv":"replacement","payload":"replacement","require_token_to_read_response":true
     })).await;
@@ -131,6 +132,61 @@ async fn authorization_preserves_single_use_and_reservation() {
     assert_eq!(poll(&app, &id, token).await.0, 401);
     assert_eq!(poll(&app, &id, new_token).await.0, 200);
     assert_eq!(poll(&app, &other_id, other_token).await.0, 200);
+}
+
+#[tokio::test]
+async fn existence_policy_is_derived_independently_of_authentication() {
+    let app = common::test_app().await;
+    for supplied in [false, true] {
+        for protected in [false, true] {
+            let (id, created) = create(&app, supplied, protected).await;
+            assert_eq!(
+                hash(&id).await["allow_existence_check"],
+                if supplied {
+                    b"false".as_slice()
+                } else {
+                    b"true".as_slice()
+                }
+            );
+            assert_eq!(created.get("response_read_token").is_some(), protected);
+            for route in ["request", "response"] {
+                let url = format!("/{route}/{id}");
+                assert_eq!(
+                    common::head(&app, &url).await,
+                    if supplied { 404 } else { 200 }
+                );
+                let request = Request::builder()
+                    .method(Method::HEAD)
+                    .uri(&url)
+                    .header(
+                        "authorization",
+                        format!(
+                            "Bearer {}",
+                            created["response_read_token"].as_str().unwrap_or("")
+                        ),
+                    )
+                    .body(Body::empty())
+                    .unwrap();
+                assert_eq!(
+                    app.clone()
+                        .oneshot(request)
+                        .await
+                        .unwrap()
+                        .status()
+                        .as_u16(),
+                    if supplied { 404 } else { 200 }
+                );
+            }
+            // Sessions predating the policy retain public HEAD checks.
+            common::redis_connection()
+                .await
+                .hdel::<_, _, ()>(format!("session:{id}"), "allow_existence_check")
+                .await
+                .unwrap();
+            assert_eq!(common::head(&app, &format!("/request/{id}")).await, 200);
+            assert_eq!(common::head(&app, &format!("/response/{id}")).await, 200);
+        }
+    }
 }
 
 #[tokio::test]
@@ -163,7 +219,7 @@ async fn creation_disables_caching_and_polling_supports_authorization_preflight(
 }
 
 #[tokio::test]
-async fn staging_reset_retains_credentials() {
+async fn staging_reset_retains_credentials_and_policy() {
     if !std::env::var("ENVIRONMENT").is_ok_and(|v| v.eq_ignore_ascii_case("staging")) {
         return;
     }
@@ -181,10 +237,9 @@ async fn staging_reset_retains_credentials() {
         201
     );
     let after = hash(&id).await;
-    assert_eq!(
-        before["response_read_token_digest"],
-        after["response_read_token_digest"]
-    );
+    for field in ["allow_existence_check", "response_read_token_digest"] {
+        assert_eq!(before[field], after[field]);
+    }
     assert_eq!(common::get(&app, &format!("/response/{id}")).await.0, 401);
     assert_eq!(
         poll(&app, &id, created["response_read_token"].as_str().unwrap())

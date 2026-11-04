@@ -30,10 +30,10 @@ Bridge ->> IDKit: <response>
 
 - `POST /request`: Called by IDKit. Initializes a proof verification request.
 - `GET /request/:id`: Called by Authenticator. Used to fetch the proof verification request. One time use.
-- `HEAD /request/:id`: Existence check for a request. `200` if present, `404` otherwise.
+- `HEAD /request/:id`: Existence check for a request, subject to the session policy below.
 - `PUT /response/:id`: Called by Authenticator. Used to send the proof back to the application.
 - `GET /response/:id`: Called by IDKit. Continuous pulling to fetch the status of the request and the response if available. Response can only be retrieved once.
-- `HEAD /response/:id`: Existence check for a request's status. `200` if present, `404` otherwise.
+- `HEAD /response/:id`: Existence check for a request's status, subject to the session policy below.
 - `PUT /request/:id`: Staging only (`ENVIRONMENT == "staging"`). Fully resets the session at this ID, intentionally bypassing reservations.
 
 Response uploads may include an optional `tracking_receipt` alongside `iv` and
@@ -44,13 +44,17 @@ callbacks; a configured URL must be valid (an empty value is invalid). Analytics
 delivery is best-effort and never blocks response delivery. Operational metrics
 and tracing remain enabled independently of callbacks.
 
-### Response-read protection
+### Response-read protection and existence checks
 
 Set `require_token_to_read_response: true` on `POST /request` to receive a private
 `response_read_token`. Send it as `Authorization: Bearer <token>` on every
 `GET /response/:id`. Missing or invalid tokens return `401` without consuming the
 response. Without the opt-in, response reads remain public. Request GET and
 response PUT remain unauthenticated; keep the token out of shared URLs.
+
+Bridge stores `allow_existence_check` in the session: `false` for client-supplied
+IDs, `true` for generated IDs. When false, both HEAD routes return `404`, even with
+a valid token. Older sessions without this policy keep their existing behavior.
 
 Deploy Bridge and drain old instances before releasing clients that require tokens.
 This protects response reads; it does not prevent request enumeration or consumption.

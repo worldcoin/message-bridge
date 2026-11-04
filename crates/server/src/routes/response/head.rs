@@ -1,5 +1,5 @@
 use axum::{extract::Path, http::StatusCode, Extension};
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::aio::ConnectionManager;
 
 use crate::utils::{validate_request_id, REQ_STATUS_PREFIX};
 
@@ -12,9 +12,8 @@ pub(super) async fn handler(
         return StatusCode::BAD_REQUEST;
     }
 
-    let Ok(exists) = redis
-        .exists::<_, bool>(format!("{REQ_STATUS_PREFIX}{request_id}"))
-        .await
+    let Ok(exists) =
+        crate::session::exists_if_allowed(&mut redis, &request_id, REQ_STATUS_PREFIX).await
     else {
         return StatusCode::INTERNAL_SERVER_ERROR;
     };

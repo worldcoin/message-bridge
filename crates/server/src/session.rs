@@ -45,6 +45,7 @@ pub async fn create_request(
     idkit_flow_id: &IdkitFlowId,
     payload: &[u8],
     token_digest: Option<&[u8]>,
+    allow_existence_check: bool,
 ) -> RedisResult<bool> {
     let keys = keys(request_id);
     redis::cmd("EVAL")
@@ -56,6 +57,7 @@ pub async fn create_request(
         .arg(idkit_flow_id.as_str())
         .arg(payload)
         .arg(token_digest.unwrap_or_default())
+        .arg(allow_existence_check.to_string())
         .query_async(redis)
         .await
 }
@@ -227,4 +229,19 @@ pub fn token_digest(token: &str) -> Vec<u8> {
     ring::digest::digest(&ring::digest::SHA256, token.as_bytes())
         .as_ref()
         .to_vec()
+}
+
+/// Return whether the prefixed key exists and the session allows existence checks.
+pub async fn exists_if_allowed(
+    redis: &mut ConnectionManager,
+    request_id: &str,
+    prefix: &'static str,
+) -> RedisResult<bool> {
+    redis::cmd("EVAL")
+        .arg(include_str!("session/exists_if_allowed.lua"))
+        .arg(2)
+        .arg(session_key(request_id))
+        .arg(format!("{prefix}{request_id}"))
+        .query_async(redis)
+        .await
 }

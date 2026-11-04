@@ -92,6 +92,7 @@ async fn fixed_reservation_survives_redemption_upload_and_consumption() {
         session(&id).await,
         BTreeMap::from([
             ("reserved".to_owned(), "1".to_owned()),
+            ("allow_existence_check".to_owned(), "false".to_owned()),
             ("response_read_token_digest".to_owned(), String::new())
         ])
     );

@@ -165,11 +165,19 @@ async fn create_request(
     token_digest: Option<&[u8]>,
 ) -> Result<String, StatusCode> {
     const MAX_RESERVATION_ATTEMPTS: usize = 3;
+    let allow_existence_check = !client_supplied_id;
 
     for attempt in 1..=MAX_RESERVATION_ATTEMPTS {
-        if session::create_request(redis, &request_id, idkit_flow_id, payload, token_digest)
-            .await
-            .map_err(handle_redis_error)?
+        if session::create_request(
+            redis,
+            &request_id,
+            idkit_flow_id,
+            payload,
+            token_digest,
+            allow_existence_check,
+        )
+        .await
+        .map_err(handle_redis_error)?
         {
             return Ok(request_id);
         }
