@@ -4,7 +4,7 @@ Read `README.md` first. It defines the bridge; every change must preserve these 
 
 - **Opaque payloads.** The bridge only ever handles client-encrypted ciphertext (`iv` + `payload`). Never inspect, transform, or log payload contents.
 - **Single-use.** Requests and responses are read with `GETDEL` — one retrieval, then gone.
-- **No persistence.** Everything lives in Redis with a uniform TTL (`EXPIRE_AFTER_SECONDS` in `crates/server/src/utils.rs`) and is auto-purged. Don't add durable storage or per-key lifetimes.
+- **No persistence.** Redis data auto-expires: request/response/status use `EXPIRE_AFTER_SECONDS` (`utils.rs`); session reservation/metadata use `SESSION_TTL_SECONDS` (`session.rs`). Normal operations preserve the reservation deadline; staging reset may extend it. Don't add durable storage or other per-key lifetimes.
 
 The bridge is a dumb relay. **New** functionality must stay agnostic to clients and environments — no client/app-specific branching, no environment-specific behavior. Two intentional, temporary exceptions already exist; don't extend them or add new ones like them:
 

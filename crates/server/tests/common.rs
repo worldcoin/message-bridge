@@ -131,3 +131,7 @@ pub async fn post(app: &axum::Router, route: &str, body: &Value) -> (u16, String
 pub async fn put(app: &axum::Router, route: &str, body: &Value) -> (u16, String) {
     send(app, Method::PUT, route, Some(body), &[]).await
 }
+
+pub async fn head(app: &axum::Router, route: &str) -> u16 {
+    send(app, Method::HEAD, route, None, &[]).await.0
+}

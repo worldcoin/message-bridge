@@ -7,29 +7,20 @@ use schemars::JsonSchema;
 
 use crate::{
     analytics::Analytics,
-    observability,
+    observability, session,
     utils::{
-        handle_redis_error, validate_request_id, RequestPayload, RequestStatus, REQ_STATUS_PREFIX,
+        handle_redis_error, validate_request_id, RequestPayload, RequestStatus, REQ_PREFIX,
+        REQ_STATUS_PREFIX, RES_PREFIX,
     },
 };
 
-use super::{StoredResponse, RES_PREFIX};
+use super::StoredResponse;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize, JsonSchema)]
 pub(super) struct Response {
     status: RequestStatus,
     response: Option<RequestPayload>,
 }
-
-/// (status, response payload, flow ID, `supports_flow_telemetry` flag,
-/// `client_name`), as read from Redis.
-type PollResult = (
-    Option<String>,
-    Option<Vec<u8>>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-);
 
 #[tracing::instrument(
     parent = None,
@@ -48,52 +39,39 @@ pub(super) async fn handler(
     let request_id = request_id.to_lowercase();
     validate_request_id(&request_id)?;
 
-    // Read the correlation key without consuming it while the response is
-    // still being polled. Successful response delivery cleans it up below.
-    let mut pipe = redis::pipe();
-    pipe.atomic()
+    let metadata = session::metadata(&mut redis, &request_id)
+        .await
+        .map_err(handle_redis_error)?;
+    let (status, value): (Option<String>, Option<Vec<u8>>) = redis::pipe()
+        .atomic()
         .get(format!("{REQ_STATUS_PREFIX}{request_id}"))
         .get_del(format!("{RES_PREFIX}{request_id}"))
-        .get(observability::flow_key(&request_id))
-        .get(observability::supports_flow_telemetry_key(&request_id))
-        .get(observability::client_name_key(&request_id));
-
-    let (status, value, flow, supports_flow_telemetry, client_name): PollResult = pipe
         .query_async(&mut redis)
         .await
         .map_err(handle_redis_error)?;
-
-    observability::record_response_handoff(flow.as_deref());
+    observability::record_response_handoff(metadata.idkit_flow_id.as_deref());
 
     if let Some(value) = value {
         let stored_response: StoredResponse =
             serde_json::from_slice(&value).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        // Cleanup is best effort after GETDEL: the correlation key has a
-        // fixed expiry and response delivery must not fail because of it.
         let mut cleanup = redis::pipe();
         cleanup
             .atomic()
-            .del(format!("{REQ_STATUS_PREFIX}{request_id}"))
-            .del(observability::flow_key(&request_id))
-            .del(observability::supports_flow_telemetry_key(&request_id))
-            .del(observability::client_name_key(&request_id));
-        if cleanup
-            .query_async::<(u64, u64, u64, u64)>(&mut redis)
-            .await
-            .is_err()
-        {
-            tracing::warn!(
-                outcome = "flow_id_cleanup_failed",
-                operation = "response_handoff",
-                "Failed to clean up IDKit flow ID"
-            );
+            .del(&[
+                format!("{REQ_PREFIX}{request_id}"),
+                format!("{REQ_STATUS_PREFIX}{request_id}"),
+            ])
+            .ignore();
+        session::clear_metadata(&mut cleanup, &request_id);
+        if let Err(error) = cleanup.query_async::<()>(&mut redis).await {
+            tracing::warn!("Failed to clean up consumed response state: {error}");
         }
 
         telemetry_batteries::reexports::metrics::counter!(
             "message_bridge.response_consumed",
-            "supports_flow_telemetry" => observability::supports_flow_telemetry_tag_from_stored(supports_flow_telemetry.as_deref()),
-            "client_name" => observability::client_name_tag_from_stored(client_name.as_deref())
+            "supports_flow_telemetry" => observability::supports_flow_telemetry_tag_from_stored(metadata.supports_flow_telemetry.as_deref()),
+            "client_name" => observability::client_name_tag_from_stored(metadata.client_name.as_deref())
         )
         .increment(1);
 

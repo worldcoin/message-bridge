@@ -16,14 +16,14 @@ use uuid::Uuid;
 
 use redis::AsyncCommands;
 
-fn flow_key(request_id: &str) -> String {
-    format!("flow:{request_id}")
+fn session_key(request_id: &str) -> String {
+    format!("session:{request_id}")
 }
 
-async fn flow_id(request_id: &str) -> Option<String> {
+async fn idkit_flow_id(request_id: &str) -> Option<String> {
     common::redis_connection()
         .await
-        .get(flow_key(request_id))
+        .hget(session_key(request_id), "idkit_flow_id")
         .await
         .expect("read flow ID")
 }
@@ -36,29 +36,19 @@ async fn redis_ttl(key: &str) -> i64 {
         .expect("read Redis TTL")
 }
 
-fn supports_flow_telemetry_key(request_id: &str) -> String {
-    format!("supports_flow_telemetry:{request_id}")
-}
-
-/// The stored `supports_flow_telemetry` value ("true"/"false"), or `None` once cleaned up
-/// after response delivery — the key always exists otherwise, since
-/// `store_supports_flow_telemetry_flag` overwrites it unconditionally.
+/// Telemetry is retained in the session hash until its reservation expires.
 async fn supports_flow_telemetry(request_id: &str) -> Option<String> {
     common::redis_connection()
         .await
-        .get(supports_flow_telemetry_key(request_id))
+        .hget(session_key(request_id), "supports_flow_telemetry")
         .await
         .expect("read supports_flow_telemetry flag")
-}
-
-fn client_name_key(request_id: &str) -> String {
-    format!("client_name:{request_id}")
 }
 
 async fn client_name(request_id: &str) -> Option<String> {
     common::redis_connection()
         .await
-        .get(client_name_key(request_id))
+        .hget(session_key(request_id), "client_name")
         .await
         .expect("read client_name")
 }
@@ -205,10 +195,10 @@ async fn test_get_request_returns_flow_id_when_client_opts_in() {
     assert_eq!(response["iv"], "flow_test_iv");
     assert_eq!(response["payload"], "flow_test_payload");
 
-    let flow_id = response["idkit_flow_id"]
+    let idkit_flow_id = response["idkit_flow_id"]
         .as_str()
         .expect("opted-in response must include a flow ID");
-    let uuid = flow_id
+    let uuid = idkit_flow_id
         .strip_prefix("idkitflow_")
         .expect("flow ID must use the IDKit prefix");
     assert!(Uuid::parse_str(uuid).is_ok());
@@ -787,7 +777,7 @@ async fn test_openapi_endpoint() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn test_flow_id_lifecycle_uses_fixed_ttl_and_cleans_up() {
+async fn test_flow_id_lifecycle_preserves_reservation_until_expiry() {
     let app = common::test_app().await;
     let request_id = fresh_id();
     let request = json!({
@@ -805,14 +795,14 @@ async fn test_flow_id_lifecycle_uses_fixed_ttl_and_cleans_up() {
         "flow identifiers must not be exposed by POST /request"
     );
 
-    let created_flow = flow_id(&request_id)
+    let created_flow = idkit_flow_id(&request_id)
         .await
         .expect("flow ID after request create");
     let uuid = created_flow
         .strip_prefix("idkitflow_")
         .expect("flow ID prefix");
     Uuid::parse_str(uuid).expect("flow ID suffix is a UUID");
-    let created_ttl = redis_ttl(&flow_key(&request_id)).await;
+    let created_ttl = redis_ttl(&session_key(&request_id)).await;
     assert!((1801..=2700).contains(&created_ttl));
 
     let (request_status, request_body) = common::get(&app, &format!("/request/{request_id}")).await;
@@ -830,13 +820,13 @@ async fn test_flow_id_lifecycle_uses_fixed_ttl_and_cleans_up() {
         "GET /request response schema must stay unchanged"
     );
     assert_eq!(
-        flow_id(&request_id).await.as_deref(),
+        idkit_flow_id(&request_id).await.as_deref(),
         Some(created_flow.as_str())
     );
-    let request_ttl = redis_ttl(&flow_key(&request_id)).await;
+    let request_ttl = redis_ttl(&session_key(&request_id)).await;
     assert!(
         request_ttl <= created_ttl,
-        "request consumption must not refresh the fixed flow TTL"
+        "request consumption preserves the reservation deadline"
     );
 
     let response = json!({
@@ -848,13 +838,13 @@ async fn test_flow_id_lifecycle_uses_fixed_ttl_and_cleans_up() {
     assert_eq!(put_status, 201, "response creation failed: {put_body}");
 
     assert_eq!(
-        flow_id(&request_id).await.as_deref(),
+        idkit_flow_id(&request_id).await.as_deref(),
         Some(created_flow.as_str())
     );
-    let response_ttl = redis_ttl(&flow_key(&request_id)).await;
+    let response_ttl = redis_ttl(&session_key(&request_id)).await;
     assert!(
         response_ttl <= request_ttl,
-        "response creation must not refresh the fixed flow TTL"
+        "response upload preserves the reservation deadline"
     );
 
     let (get_status, get_body) = common::get(&app, &format!("/response/{request_id}")).await;
@@ -866,10 +856,7 @@ async fn test_flow_id_lifecycle_uses_fixed_ttl_and_cleans_up() {
         get_json.get("idkit_flow_id").is_none(),
         "GET /response must not expose flow identifiers"
     );
-    assert!(
-        flow_id(&request_id).await.is_none(),
-        "flow ID is deleted after response consumption"
-    );
+    assert_eq!(idkit_flow_id(&request_id).await.as_deref(), None);
     assert_eq!(redis_ttl(&format!("req:status:{request_id}")).await, -2);
 }
 
@@ -892,8 +879,8 @@ async fn test_flow_ids_are_unique_and_never_replace_request_ids() {
         assert!(response.get("idkit_flow_id").is_none());
     }
 
-    let first_flow = flow_id(&first_id).await.unwrap();
-    let second_flow = flow_id(&second_id).await.unwrap();
+    let first_flow = idkit_flow_id(&first_id).await.unwrap();
+    let second_flow = idkit_flow_id(&second_id).await.unwrap();
     assert_ne!(first_flow, second_flow);
     assert_ne!(first_flow, first_id);
     assert_ne!(second_flow, second_id);
@@ -911,12 +898,14 @@ async fn test_response_polling_preserves_flow_id() {
 
     let (create_status, create_body) = common::post(&app, "/request", &request).await;
     assert_eq!(create_status, 200, "request creation failed: {create_body}");
-    let expected_flow = flow_id(&request_id).await.expect("flow ID after create");
+    let expected_flow = idkit_flow_id(&request_id)
+        .await
+        .expect("flow ID after create");
 
     let (poll_status, poll_body) = common::get(&app, &format!("/response/{request_id}")).await;
     assert_eq!(poll_status, 200, "response polling failed: {poll_body}");
     assert_eq!(
-        flow_id(&request_id).await.as_deref(),
+        idkit_flow_id(&request_id).await.as_deref(),
         Some(expected_flow.as_str()),
         "polling without a response must not consume the flow ID"
     );
@@ -983,7 +972,7 @@ async fn test_legacy_missing_flow_id_does_not_break_round_trip() {
 
     let deleted: usize = common::redis_connection()
         .await
-        .del(flow_key(&request_id))
+        .del(session_key(&request_id))
         .await
         .expect("delete flow ID");
     assert_eq!(deleted, 1);
@@ -1018,7 +1007,7 @@ async fn test_malformed_flow_id_is_best_effort() {
 
     common::redis_connection()
         .await
-        .set_ex::<_, _, ()>(flow_key(&request_id), b"not-a-flow-id", 1800)
+        .hset::<_, _, _, ()>(session_key(&request_id), "idkit_flow_id", b"not-a-flow-id")
         .await
         .expect("inject malformed flow ID");
 
@@ -1043,7 +1032,7 @@ async fn test_malformed_flow_id_is_best_effort() {
         status, 200,
         "flow ID parse failure must not break response consumption: {body}"
     );
-    assert!(flow_id(&request_id).await.is_none());
+    assert_eq!(idkit_flow_id(&request_id).await, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -1137,11 +1126,11 @@ async fn test_get_request_headers_set_supports_flow_telemetry_and_client_name() 
     assert_eq!(status, 200, "response consumption failed: {body}");
     let _: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(
-        supports_flow_telemetry(&request_id).await,
+        supports_flow_telemetry(&request_id).await.as_deref(),
         None,
-        "cleaned up once the response is delivered, like the flow ID"
+        "metadata is cleared after consumption"
     );
-    assert_eq!(client_name(&request_id).await, None);
+    assert_eq!(client_name(&request_id).await.as_deref(), None);
 }
 
 #[tokio::test]
@@ -1247,6 +1236,26 @@ async fn test_supports_flow_telemetry_and_client_name_do_not_leak_across_a_reuse
         Some("true")
     );
     assert_eq!(client_name(&request_id).await.as_deref(), Some("ios"));
+
+    let response = json!({"iv": "response-iv", "payload": "response-payload"});
+    assert_eq!(
+        common::put(&app, &format!("/response/{request_id}"), &response)
+            .await
+            .0,
+        201
+    );
+    assert_eq!(
+        common::get(&app, &format!("/response/{request_id}"))
+            .await
+            .0,
+        200
+    );
+    // Simulate reservation expiry without waiting 45 minutes.
+    common::redis_connection()
+        .await
+        .del::<_, ()>(session_key(&request_id))
+        .await
+        .unwrap();
 
     let second = json!({
         "request_id": request_id,
