@@ -308,14 +308,27 @@ async fn test_get_response() {
     assert_eq!(json["response"]["payload"], "resp_payload");
 }
 
+async fn create_response_url(app: &axum::Router) -> String {
+    let (status, body) = common::post(
+        app,
+        "/request",
+        &json!({"iv": "request-iv", "payload": "request-ciphertext"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let created: Value = serde_json::from_str(&body).unwrap();
+    format!("/response/{}", created["request_id"].as_str().unwrap())
+}
+
 #[tokio::test]
 async fn test_response_fetch_calls_analytics_url() {
     let (callback_url, mut analytics_bodies, server) = start_analytics_recorder().await;
     let app = common::test_app_with_analytics(&callback_url).await;
 
-    let (upload_status, upload_body) = common::post(
+    let response_url = create_response_url(&app).await;
+    let (upload_status, _) = common::put(
         &app,
-        "/response",
+        &response_url,
         &json!({
             "iv": "response-iv",
             "payload": "response-payload",
@@ -324,8 +337,6 @@ async fn test_response_fetch_calls_analytics_url() {
     )
     .await;
     assert_eq!(upload_status, 201);
-    let upload: Value = serde_json::from_str(&upload_body).unwrap();
-    let response_url = format!("/response/{}", upload["request_id"].as_str().unwrap());
 
     let (fetch_status, fetch_body) = common::get(&app, &response_url).await;
     assert_eq!(fetch_status, 200);
@@ -350,15 +361,14 @@ async fn test_response_fetch_calls_analytics_url() {
 #[tokio::test]
 async fn test_response_receipt_with_analytics_disabled() {
     let app = common::test_app().await;
-    let (status, body) = common::post(
+    let url = create_response_url(&app).await;
+    let (status, _) = common::put(
         &app,
-        "/response",
+        &url,
         &json!({"iv": "iv", "payload": "ciphertext", "tracking_receipt": "opaque-receipt"}),
     )
     .await;
     assert_eq!(status, 201);
-    let created: Value = serde_json::from_str(&body).unwrap();
-    let url = format!("/response/{}", created["request_id"].as_str().unwrap());
 
     let (status, body) = common::get(&app, &url).await;
     assert_eq!(status, 200);
@@ -398,52 +408,17 @@ async fn test_response_pending_status() {
     assert!(status == "initialized" || status == "retrieved" || status == "pending");
 }
 
-/// Test POST /response creates a standalone response
+/// Standalone responses are no longer part of the bridge API.
 #[tokio::test]
-async fn test_create_standalone_response() {
+async fn test_standalone_response_endpoint_removed() {
     let app = common::test_app().await;
-
-    let payload = json!({
-        "iv": "standalone_iv",
-        "payload": "standalone_payload"
-    });
-
-    let (status_code, body) = common::post(&app, "/response", &payload).await;
-
-    assert_eq!(status_code, 201);
-
-    let json: Value = serde_json::from_str(&body).expect("Failed to parse JSON");
-    let request_id = json.get("request_id").expect("Missing request_id");
-    assert!(request_id.is_string());
-}
-
-/// Test standalone response flow: POST /response then GET /response/:id
-#[tokio::test]
-async fn test_standalone_response_flow() {
-    let app = common::test_app().await;
-
-    // Create standalone response
-    let payload = json!({
-        "iv": "standalone_flow_iv",
-        "payload": "standalone_flow_payload"
-    });
-
-    let (status_code, body) = common::post(&app, "/response", &payload).await;
-    assert_eq!(status_code, 201);
-
-    let create_json: Value = serde_json::from_str(&body).expect("Failed to parse JSON");
-    let request_id = create_json["request_id"].as_str().unwrap();
-
-    // Retrieve the response
-    let get_url = format!("/response/{request_id}");
-    let (get_status, get_body) = common::get(&app, &get_url).await;
-
-    assert_eq!(get_status, 200);
-
-    let json: Value = serde_json::from_str(&get_body).expect("Failed to parse JSON");
-    assert_eq!(json["status"], "completed");
-    assert_eq!(json["response"]["iv"], "standalone_flow_iv");
-    assert_eq!(json["response"]["payload"], "standalone_flow_payload");
+    let (status, _) = common::post(
+        &app,
+        "/response",
+        &json!({"iv": "iv", "payload": "ciphertext"}),
+    )
+    .await;
+    assert_eq!(status, 404);
 }
 
 /// Test invalid request ID returns 404
@@ -1069,23 +1044,6 @@ async fn test_malformed_flow_id_is_best_effort() {
         "flow ID parse failure must not break response consumption: {body}"
     );
     assert!(flow_id(&request_id).await.is_none());
-}
-
-#[tokio::test]
-async fn test_standalone_response_does_not_create_idkit_flow_id() {
-    let app = common::test_app().await;
-    let response = json!({
-        "iv": "standalone-untraced-iv",
-        "payload": "standalone-untraced-payload",
-    });
-    let (status, body) = common::post(&app, "/response", &response).await;
-    assert_eq!(status, 201, "standalone response creation failed: {body}");
-    let body: Value = serde_json::from_str(&body).unwrap();
-    let request_id = body["request_id"].as_str().unwrap();
-    assert!(
-        flow_id(request_id).await.is_none(),
-        "standalone response flows stay outside WDP85 tracing"
-    );
 }
 
 // ---------------------------------------------------------------------------
