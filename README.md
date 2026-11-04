@@ -34,7 +34,6 @@ Bridge ->> IDKit: <response>
 - `PUT /response/:id`: Called by Authenticator. Used to send the proof back to the application.
 - `GET /response/:id`: Called by IDKit. Continuous pulling to fetch the status of the request and the response if available. Response can only be retrieved once.
 - `HEAD /response/:id`: Existence check for a request's status. `200` if present, `404` otherwise.
-- `POST /response`: Called by a client to create a standalone response without a prior request (see [Standalone Response Flow](#standalone-response-flow)).
 - `PUT /request/:id`: Staging only (`ENVIRONMENT == "staging"`). Idempotent request upsert.
 
 Response uploads may include an optional `tracking_receipt` alongside `iv` and
@@ -44,22 +43,6 @@ sends the receipt to that URL after the response is dequeued and decoded. Leave 
 callbacks; a configured URL must be valid (an empty value is invalid). Analytics
 delivery is best-effort and never blocks response delivery. Operational metrics
 and tracing remain enabled independently of callbacks.
-
-### Standalone Response Flow
-
-This flow allows a client to send a `/response` without first generating a `/request` first.
-
-```mermaid
-sequenceDiagram
-    participant ClientA
-    participant Bridge
-    participant ClientB
-
-    ClientA->>Bridge: POST /response (payload)
-    Bridge->>ClientA: 201 CREATED {request_id}
-    ClientB->>Bridge: GET /response/:request_id
-    Bridge->>ClientB: 200 OK {response}
-```
 
 ## Local Development
 
