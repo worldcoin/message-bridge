@@ -12,8 +12,6 @@ mod head;
 mod post;
 mod put;
 
-pub(super) const REQ_PREFIX: &str = "req:";
-
 /// Deployment environment, as far as the request routes care.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Environment {

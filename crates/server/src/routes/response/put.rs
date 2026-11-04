@@ -5,14 +5,15 @@ use axum_jsonschema::Json;
 use redis::{aio::ConnectionManager, AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 
 use crate::{
-    observability,
+    observability, session,
     utils::{
         handle_redis_error, validate_request_id, RequestStatus, EXPIRE_AFTER_SECONDS,
         REQ_STATUS_PREFIX,
     },
 };
 
-use super::{StoredResponse, RES_PREFIX};
+use super::StoredResponse;
+use crate::utils::RES_PREFIX;
 
 #[tracing::instrument(
     parent = None,
@@ -31,56 +32,40 @@ pub(super) async fn handler(
     let request_id = request_id.to_lowercase();
     validate_request_id(&request_id)?;
 
-    let mut pipe = redis::pipe();
-    pipe.atomic()
+    let payload = serde_json::to_vec(&request).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let status: Option<String> = redis
         .get(format!("{REQ_STATUS_PREFIX}{request_id}"))
-        .get(observability::flow_key(&request_id))
-        .get(observability::supports_flow_telemetry_key(&request_id))
-        .get(observability::client_name_key(&request_id));
-    let (status, flow, supports_flow_telemetry, client_name): (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    ) = pipe
-        .query_async(&mut redis)
         .await
         .map_err(handle_redis_error)?;
-
-    let current_status = status.and_then(|status| RequestStatus::from_str(&status).ok());
-    if current_status.is_none() {
+    if status
+        .and_then(|value| RequestStatus::from_str(&value).ok())
+        .is_none()
+    {
         return Err(StatusCode::BAD_REQUEST);
     }
-
-    observability::record_response_handoff(flow.as_deref());
-
+    let metadata = session::metadata(&mut redis, &request_id)
+        .await
+        .map_err(handle_redis_error)?;
     let options = SetOptions::default()
         .conditional_set(ExistenceCheck::NX)
         .with_expiration(SetExpiry::EX(EXPIRE_AFTER_SECONDS));
-
-    let set_ok: Option<String> = redis
-        .set_options(
-            format!("{RES_PREFIX}{request_id}"),
-            serde_json::to_vec(&request).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-            options,
-        )
+    let stored: Option<String> = redis
+        .set_options(format!("{RES_PREFIX}{request_id}"), &payload, options)
         .await
         .map_err(handle_redis_error)?;
-
-    if set_ok.is_none() {
+    if stored.is_none() {
         return Err(StatusCode::CONFLICT);
     }
-
-    // The response now represents completion, so the request status is no longer needed.
     redis
         .del::<_, ()>(format!("{REQ_STATUS_PREFIX}{request_id}"))
         .await
         .map_err(handle_redis_error)?;
+    observability::record_response_handoff(metadata.idkit_flow_id.as_deref());
 
     telemetry_batteries::reexports::metrics::counter!(
         "message_bridge.response_created",
-        "supports_flow_telemetry" => observability::supports_flow_telemetry_tag_from_stored(supports_flow_telemetry.as_deref()),
-        "client_name" => observability::client_name_tag_from_stored(client_name.as_deref())
+        "supports_flow_telemetry" => observability::supports_flow_telemetry_tag_from_stored(metadata.supports_flow_telemetry.as_deref()),
+        "client_name" => observability::client_name_tag_from_stored(metadata.client_name.as_deref())
     )
     .increment(1);
 

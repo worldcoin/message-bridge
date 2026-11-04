@@ -2,19 +2,14 @@ use std::sync::Arc;
 
 use axum::{http::StatusCode, Extension};
 use axum_jsonschema::Json;
-use redis::{aio::ConnectionManager, AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
+use redis::aio::ConnectionManager;
 use schemars::JsonSchema;
 use uuid::Uuid;
 
 use crate::{
-    observability,
-    utils::{
-        handle_redis_error, validate_request_id, AppOverrides, RequestPayload, RequestStatus,
-        EXPIRE_AFTER_SECONDS, REQ_STATUS_PREFIX,
-    },
+    observability, session,
+    utils::{handle_redis_error, validate_request_id, AppOverrides, RequestPayload},
 };
-
-use super::REQ_PREFIX;
 
 #[derive(Debug, serde::Deserialize, JsonSchema)]
 pub(super) struct CreateRequestBody {
@@ -90,6 +85,7 @@ pub(super) async fn handler(
         supports_app_overrides,
     } = body;
 
+    let client_supplied_id = request_id.is_some();
     let request_id = match request_id {
         Some(id) => {
             let id = id.to_lowercase();
@@ -103,32 +99,17 @@ pub(super) async fn handler(
     let payload_bytes =
         serde_json::to_vec(&payload).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let options = SetOptions::default()
-        .conditional_set(ExistenceCheck::NX)
-        .with_expiration(SetExpiry::EX(EXPIRE_AFTER_SECONDS));
+    let idkit_flow_id = observability::IdkitFlowId::new();
+    let request_id = create_request(
+        &mut redis,
+        request_id,
+        client_supplied_id,
+        &idkit_flow_id,
+        &payload_bytes,
+    )
+    .await?;
 
-    let set_ok: Option<String> = redis
-        .set_options(format!("{REQ_PREFIX}{request_id}"), payload_bytes, options)
-        .await
-        .map_err(handle_redis_error)?;
-
-    if set_ok.is_none() {
-        return Err(StatusCode::CONFLICT);
-    }
-
-    redis
-        .set_ex::<_, _, ()>(
-            format!("{REQ_STATUS_PREFIX}{request_id}"),
-            RequestStatus::Initialized.to_string(),
-            EXPIRE_AFTER_SECONDS,
-        )
-        .await
-        .map_err(handle_redis_error)?;
-
-    if let Err(outcome) = observability::mint_and_store_idkit_flow_id(&mut redis, &request_id).await
-    {
-        tracing::warn!(outcome, "Failed to mint and store IDKit flow ID");
-    }
+    observability::record_idkit_flow_id(&idkit_flow_id);
 
     // supports_flow_telemetry/client_name are reported on GET /request/:id
     // instead — the RP calling POST has no way to know either.
@@ -139,6 +120,32 @@ pub(super) async fn handler(
         request_id,
         app_overrides: select_response_overrides(supports_app_overrides, &app_overrides),
     }))
+}
+
+async fn create_request(
+    redis: &mut ConnectionManager,
+    mut request_id: String,
+    client_supplied_id: bool,
+    idkit_flow_id: &observability::IdkitFlowId,
+    payload: &[u8],
+) -> Result<String, StatusCode> {
+    const MAX_RESERVATION_ATTEMPTS: usize = 3;
+
+    for attempt in 1..=MAX_RESERVATION_ATTEMPTS {
+        if session::create_request(redis, &request_id, idkit_flow_id, payload)
+            .await
+            .map_err(handle_redis_error)?
+        {
+            return Ok(request_id);
+        }
+        if client_supplied_id {
+            return Err(StatusCode::CONFLICT);
+        }
+        if attempt < MAX_RESERVATION_ATTEMPTS {
+            request_id = Uuid::new_v4().to_string();
+        }
+    }
+    Err(StatusCode::SERVICE_UNAVAILABLE)
 }
 
 /// Pick the overrides to echo back on `POST /request`: the configured map for

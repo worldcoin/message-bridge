@@ -3,7 +3,7 @@ use redis::{aio::ConnectionManager, AsyncCommands};
 
 use crate::utils::validate_request_id;
 
-use super::REQ_PREFIX;
+use crate::utils::REQ_PREFIX;
 
 pub(super) async fn handler(
     Path(request_id): Path<String>,

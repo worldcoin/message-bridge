@@ -9,13 +9,12 @@ use schemars::JsonSchema;
 
 use crate::{
     observability::{self, IdkitFlowId},
+    session,
     utils::{
         handle_redis_error, validate_request_id, RequestPayload, RequestStatus,
-        EXPIRE_AFTER_SECONDS, REQ_STATUS_PREFIX,
+        EXPIRE_AFTER_SECONDS, REQ_PREFIX, REQ_STATUS_PREFIX,
     },
 };
-
-use super::REQ_PREFIX;
 
 /// Capability-negotiation header for backwards-compatible flow correlation.
 ///
@@ -60,13 +59,8 @@ pub(super) async fn handler(
     let request_id = request_id.to_lowercase();
     validate_request_id(&request_id)?;
 
-    let mut pipe = redis::pipe();
-    pipe.atomic()
+    let value: Option<Vec<u8>> = redis
         .get_del(format!("{REQ_PREFIX}{request_id}"))
-        .get(observability::flow_key(&request_id));
-
-    let (value, idkit_flow_id): (Option<Vec<u8>>, Option<String>) = pipe
-        .query_async(&mut redis)
         .await
         .map_err(handle_redis_error)?;
 
@@ -83,19 +77,27 @@ pub(super) async fn handler(
         .await
         .map_err(handle_redis_error)?;
 
-    let idkit_flow_id = observability::record_request_handoff(idkit_flow_id.as_deref());
-
     let supports_flow_telemetry =
         header_bool(&headers, SUPPORTS_FLOW_TELEMETRY_HEADER).unwrap_or(false);
     let client_name = header_str(&headers, CLIENT_NAME_HEADER);
 
-    observability::store_supports_flow_telemetry_flag(
+    let idkit_flow_id = match session::store_client_metadata(
         &mut redis,
         &request_id,
         supports_flow_telemetry,
+        client_name,
     )
-    .await;
-    observability::store_client_name(&mut redis, &request_id, client_name).await;
+    .await
+    {
+        Ok(idkit_flow_id) => idkit_flow_id,
+        Err(error) => {
+            tracing::warn!(%error, "Failed to store client metadata");
+            None
+        }
+    };
+    if let Some(idkit_flow_id) = &idkit_flow_id {
+        observability::record_idkit_flow_id(idkit_flow_id);
+    }
 
     telemetry_batteries::reexports::metrics::counter!(
         "message_bridge.request_consumed",

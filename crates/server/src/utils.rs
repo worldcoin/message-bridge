@@ -5,8 +5,10 @@ use redis::RedisError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub const EXPIRE_AFTER_SECONDS: u64 = 900; // Increasing to allow partner verifications.
-pub const REQ_STATUS_PREFIX: &str = "req:status:";
+pub const EXPIRE_AFTER_SECONDS: u64 = 900;
+pub(crate) const REQ_PREFIX: &str = "req:";
+pub(crate) const RES_PREFIX: &str = "res:";
+pub(crate) const REQ_STATUS_PREFIX: &str = "req:status:";
 
 /// Maximum length of a `request_id`.
 ///

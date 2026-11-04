@@ -34,7 +34,7 @@ Bridge ->> IDKit: <response>
 - `PUT /response/:id`: Called by Authenticator. Used to send the proof back to the application.
 - `GET /response/:id`: Called by IDKit. Continuous pulling to fetch the status of the request and the response if available. Response can only be retrieved once.
 - `HEAD /response/:id`: Existence check for a request's status. `200` if present, `404` otherwise.
-- `PUT /request/:id`: Staging only (`ENVIRONMENT == "staging"`). Idempotent request upsert.
+- `PUT /request/:id`: Staging only (`ENVIRONMENT == "staging"`). Fully resets the session at this ID, intentionally bypassing reservations.
 
 Response uploads may include an optional `tracking_receipt` alongside `iv` and
 `payload`. The receipt remains opaque, expires with the response, and is never
@@ -43,6 +43,17 @@ sends the receipt to that URL after the response is dequeued and decoded. Leave 
 callbacks; a configured URL must be valid (an empty value is invalid). Analytics
 delivery is best-effort and never blocks response delivery. Operational metrics
 and tracing remain enabled independently of callbacks.
+
+### ID reservations
+
+IDs stay reserved for 45 minutes; request, response, and status data expire after
+15 minutes. Consumption and polling do not release or extend the reservation.
+`POST /request` returns `409` for occupied IDs; generated IDs retry on collision.
+Staging `PUT /request/:id` intentionally resets the session.
+
+Creation atomically stores the reservation and payload, clearing stale legacy data.
+Legacy telemetry correlation remains supported until an ID is reused.
+Drain old instances before relying on reservations. Delayed writes after expiry can still affect a reused ID.
 
 ## Local Development
 

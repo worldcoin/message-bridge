@@ -9,8 +9,6 @@ mod get;
 mod head;
 mod put;
 
-pub(super) const RES_PREFIX: &str = "res:";
-
 #[derive(Debug, serde::Deserialize, serde::Serialize, JsonSchema)]
 pub(super) struct StoredResponse {
     #[serde(flatten)]

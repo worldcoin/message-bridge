@@ -12,6 +12,7 @@ use crate::{analytics::Analytics, utils::AppOverrides};
 pub(crate) mod observability;
 pub mod routes;
 pub mod server;
+mod session;
 pub mod utils;
 
 #[cfg(feature = "test-util")]
