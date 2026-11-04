@@ -22,7 +22,7 @@ pub(super) struct StoredResponse {
 pub fn handler() -> ApiRouter {
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_headers(AllowHeaders::any())
+        .allow_headers(AllowHeaders::mirror_request())
         .allow_methods([Method::GET, Method::PUT]); //TODO: PUT is required by the simulator but should not be included
 
     ApiRouter::new().api_route(

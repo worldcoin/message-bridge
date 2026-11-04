@@ -44,6 +44,17 @@ callbacks; a configured URL must be valid (an empty value is invalid). Analytics
 delivery is best-effort and never blocks response delivery. Operational metrics
 and tracing remain enabled independently of callbacks.
 
+### Response-read protection
+
+Set `require_token_to_read_response: true` on `POST /request` to receive a private
+`response_read_token`. Send it as `Authorization: Bearer <token>` on every
+`GET /response/:id`. Missing or invalid tokens return `401` without consuming the
+response. Without the opt-in, response reads remain public. Request GET and
+response PUT remain unauthenticated; keep the token out of shared URLs.
+
+Deploy Bridge and drain old instances before releasing clients that require tokens.
+This protects response reads; it does not prevent request enumeration or consumption.
+
 ### ID reservations
 
 IDs stay reserved for 45 minutes; request, response, and status data expire after

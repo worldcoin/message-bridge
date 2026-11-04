@@ -1,6 +1,6 @@
 -- KEYS: session, request, status, response, legacy telemetry, legacy client, legacy flow.
--- ARGV: session TTL seconds, data TTL seconds, IDKit flow ID, opaque request payload.
-assert(#KEYS == 7 and #ARGV == 4, 'invalid creation arguments')
+-- ARGV: session TTL seconds, data TTL seconds, IDKit flow ID, opaque request payload, token digest if needed.
+assert(#KEYS == 7 and #ARGV == 5, 'invalid creation arguments')
 
 local session_ttl = tonumber(ARGV[1])
 local data_ttl = tonumber(ARGV[2])
@@ -14,7 +14,7 @@ end
 local writes = {
     {'SETEX', KEYS[2], data_ttl, ARGV[4]},
     {'SETEX', KEYS[3], data_ttl, 'initialized'},
-    {'HSET', KEYS[1], 'reserved', '1', 'idkit_flow_id', ARGV[3]},
+    {'HSET', KEYS[1], 'reserved', '1', 'idkit_flow_id', ARGV[3], 'response_read_token_digest', ARGV[5]},
     {'EXPIRE', KEYS[1], session_ttl},
     {'DEL', KEYS[4], KEYS[5], KEYS[6], KEYS[7]},
 }

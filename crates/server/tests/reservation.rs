@@ -90,7 +90,10 @@ async fn fixed_reservation_survives_redemption_upload_and_consumption() {
     assert_eq!(deadline(&id).await, expires);
     assert_eq!(
         session(&id).await,
-        BTreeMap::from([("reserved".to_owned(), "1".to_owned())])
+        BTreeMap::from([
+            ("reserved".to_owned(), "1".to_owned()),
+            ("response_read_token_digest".to_owned(), String::new())
+        ])
     );
     assert_conflict(&app, &id).await;
     assert_eq!(

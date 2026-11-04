@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
-use axum::{http::StatusCode, Extension};
+use axum::{
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    Extension,
+};
 use axum_jsonschema::Json;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use redis::aio::ConnectionManager;
 use schemars::JsonSchema;
 use uuid::Uuid;
@@ -46,13 +50,19 @@ pub(super) struct CreateRequestBody {
     /// can never break them. Updated SDKs send `true` to receive overrides.
     #[serde(default)]
     supports_app_overrides: bool,
+    /// Require a private bearer credential for response reads.
+    #[serde(default)]
+    require_token_to_read_response: bool,
 }
 
-#[derive(Debug, serde::Serialize, JsonSchema)]
+#[derive(serde::Serialize, JsonSchema)]
 pub(super) struct RequestCreatedPayload {
     /// The unique identifier for the request — the client-supplied value if
     /// one was provided, otherwise a server-generated UUID v4.
     request_id: String,
+    /// Private response-read credential; returned only to the creating caller.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_read_token: Option<String>,
     /// Temporary workaround for the World ID app rollout: lets the server
     /// configure deeplink values and app-specific overrides. Only populated for
     /// clients that opt in via `supports_app_overrides`; omitted entirely
@@ -77,12 +87,13 @@ pub(super) async fn handler(
     Extension(mut redis): Extension<ConnectionManager>,
     Extension(app_overrides): Extension<Arc<AppOverrides>>,
     Json(body): Json<CreateRequestBody>,
-) -> Result<Json<RequestCreatedPayload>, StatusCode> {
+) -> Result<(HeaderMap, Json<RequestCreatedPayload>), StatusCode> {
     let CreateRequestBody {
         iv,
         payload,
         request_id,
         supports_app_overrides,
+        require_token_to_read_response,
     } = body;
 
     let client_supplied_id = request_id.is_some();
@@ -99,6 +110,13 @@ pub(super) async fn handler(
     let payload_bytes =
         serde_json::to_vec(&payload).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let response_read_token = if require_token_to_read_response {
+        Some(generate_response_read_token()?)
+    } else {
+        None
+    };
+    let token_digest = response_read_token.as_deref().map(session::token_digest);
+
     let idkit_flow_id = observability::IdkitFlowId::new();
     let request_id = create_request(
         &mut redis,
@@ -106,6 +124,7 @@ pub(super) async fn handler(
         client_supplied_id,
         &idkit_flow_id,
         &payload_bytes,
+        token_digest.as_deref(),
     )
     .await?;
 
@@ -116,10 +135,25 @@ pub(super) async fn handler(
     telemetry_batteries::reexports::metrics::counter!("message_bridge.request_created")
         .increment(1);
 
-    Ok(Json(RequestCreatedPayload {
-        request_id,
-        app_overrides: select_response_overrides(supports_app_overrides, &app_overrides),
-    }))
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok((
+        headers,
+        Json(RequestCreatedPayload {
+            request_id,
+            response_read_token,
+            app_overrides: select_response_overrides(supports_app_overrides, &app_overrides),
+        }),
+    ))
+}
+
+fn generate_response_read_token() -> Result<String, StatusCode> {
+    let mut bytes = [0_u8; 32];
+    rustls::crypto::ring::default_provider()
+        .secure_random
+        .fill(&mut bytes)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(STANDARD.encode(bytes))
 }
 
 async fn create_request(
@@ -128,11 +162,12 @@ async fn create_request(
     client_supplied_id: bool,
     idkit_flow_id: &observability::IdkitFlowId,
     payload: &[u8],
+    token_digest: Option<&[u8]>,
 ) -> Result<String, StatusCode> {
     const MAX_RESERVATION_ATTEMPTS: usize = 3;
 
     for attempt in 1..=MAX_RESERVATION_ATTEMPTS {
-        if session::create_request(redis, &request_id, idkit_flow_id, payload)
+        if session::create_request(redis, &request_id, idkit_flow_id, payload, token_digest)
             .await
             .map_err(handle_redis_error)?
         {

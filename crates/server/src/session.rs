@@ -7,9 +7,10 @@ use crate::{
 use redis::{aio::ConnectionManager, RedisResult};
 
 const SESSION_TTL_SECONDS: i64 = 2700;
+const SESSION_PREFIX: &str = "session:";
 
 fn session_key(request_id: &str) -> String {
-    format!("session:{request_id}")
+    format!("{SESSION_PREFIX}{request_id}")
 }
 
 /// Build the legacy correlation key for existing sessions.
@@ -43,6 +44,7 @@ pub async fn create_request(
     request_id: &str,
     idkit_flow_id: &IdkitFlowId,
     payload: &[u8],
+    token_digest: Option<&[u8]>,
 ) -> RedisResult<bool> {
     let keys = keys(request_id);
     redis::cmd("EVAL")
@@ -53,8 +55,38 @@ pub async fn create_request(
         .arg(EXPIRE_AFTER_SECONDS)
         .arg(idkit_flow_id.as_str())
         .arg(payload)
+        .arg(token_digest.unwrap_or_default())
         .query_async(redis)
         .await
+}
+
+/// Result of atomically authorizing a response read and consuming its payload.
+pub struct ReadResponse {
+    pub authorized: bool,
+    pub status: Option<String>,
+    pub response: Option<Vec<u8>>,
+}
+
+pub async fn read_response(
+    redis: &mut ConnectionManager,
+    request_id: &str,
+    token: Option<&str>,
+) -> RedisResult<ReadResponse> {
+    let digest = token.map(token_digest).unwrap_or_default();
+    let (authorized, status, response) = redis::cmd("EVAL")
+        .arg(include_str!("session/read_response.lua"))
+        .arg(3)
+        .arg(session_key(request_id))
+        .arg(format!("{REQ_STATUS_PREFIX}{request_id}"))
+        .arg(format!("{RES_PREFIX}{request_id}"))
+        .arg(digest)
+        .query_async(redis)
+        .await?;
+    Ok(ReadResponse {
+        authorized,
+        status,
+        response,
+    })
 }
 
 /// Session telemetry, independent of request and response storage.
@@ -188,4 +220,11 @@ pub fn clear_metadata(pipe: &mut redis::Pipeline, request_id: &str) {
         legacy_client_name_key(request_id),
     ])
     .ignore();
+}
+
+/// Hash a response-read credential before sending it to Redis.
+pub fn token_digest(token: &str) -> Vec<u8> {
+    ring::digest::digest(&ring::digest::SHA256, token.as_bytes())
+        .as_ref()
+        .to_vec()
 }

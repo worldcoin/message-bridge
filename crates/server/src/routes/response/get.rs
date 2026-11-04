@@ -1,7 +1,12 @@
 use std::{str::FromStr, sync::Arc};
 
-use axum::{extract::Path, http::StatusCode, Extension};
+use axum::{
+    extract::Path,
+    http::{HeaderMap, StatusCode},
+    Extension,
+};
 use axum_jsonschema::Json;
+use headers::{authorization::Bearer, Authorization, HeaderMapExt};
 use redis::aio::ConnectionManager;
 use schemars::JsonSchema;
 
@@ -10,7 +15,7 @@ use crate::{
     observability, session,
     utils::{
         handle_redis_error, validate_request_id, RequestPayload, RequestStatus, REQ_PREFIX,
-        REQ_STATUS_PREFIX, RES_PREFIX,
+        REQ_STATUS_PREFIX,
     },
 };
 
@@ -33,6 +38,7 @@ pub(super) struct Response {
 )]
 pub(super) async fn handler(
     Path(request_id): Path<String>,
+    headers: HeaderMap,
     Extension(mut redis): Extension<ConnectionManager>,
     Extension(analytics): Extension<Option<Arc<Analytics>>>,
 ) -> Result<Json<Response>, StatusCode> {
@@ -42,16 +48,18 @@ pub(super) async fn handler(
     let metadata = session::metadata(&mut redis, &request_id)
         .await
         .map_err(handle_redis_error)?;
-    let (status, value): (Option<String>, Option<Vec<u8>>) = redis::pipe()
-        .atomic()
-        .get(format!("{REQ_STATUS_PREFIX}{request_id}"))
-        .get_del(format!("{RES_PREFIX}{request_id}"))
-        .query_async(&mut redis)
+    // Redis decides whether credentials are required, including when header parsing fails.
+    let authorization = headers.typed_get::<Authorization<Bearer>>();
+    let token = authorization.as_ref().map(Authorization::token);
+    let read = session::read_response(&mut redis, &request_id, token)
         .await
         .map_err(handle_redis_error)?;
+    if !read.authorized {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
     observability::record_response_handoff(metadata.idkit_flow_id.as_deref());
 
-    if let Some(value) = value {
+    if let Some(value) = read.response {
         let stored_response: StoredResponse =
             serde_json::from_slice(&value).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -87,7 +95,7 @@ pub(super) async fn handler(
         }));
     }
 
-    let status = status.ok_or(StatusCode::NOT_FOUND)?;
+    let status = read.status.ok_or(StatusCode::NOT_FOUND)?;
     let status = RequestStatus::from_str(&status).map_err(|error| {
         tracing::error!("Failed to parse status: {error}");
         StatusCode::INTERNAL_SERVER_ERROR
