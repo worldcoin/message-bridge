@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use aide::openapi::{Info, License, OpenApi};
+use aide::openapi::{Info, License, OpenApi, SecurityScheme};
 use axum::{extract::DefaultBodyLimit, Extension};
 use redis::aio::ConnectionManager;
 
@@ -10,6 +10,7 @@ pub mod analytics;
 use crate::{analytics::Analytics, utils::AppOverrides};
 
 pub(crate) mod observability;
+mod response_token;
 pub mod routes;
 pub mod server;
 pub mod utils;
@@ -45,7 +46,16 @@ pub fn app(
     };
 
     routes::handler()
-        .finish_api(&mut openapi)
+        .finish_api_with(&mut openapi, |api| {
+            // Declare the reusable OpenAPI scheme, without a global requirement.
+            // Only GET /response references it; enforcement lives in its handler.
+            api.security_scheme("response_read_token", SecurityScheme::Http {
+                scheme: "bearer".to_string(),
+                bearer_format: Some("Base64".to_string()),
+                description: Some("The response_read_token returned by POST /request when require_token_to_read_response is true.".to_string()),
+                extensions: std::iter::empty().collect(),
+            })
+        })
         .layer(Extension(redis))
         .layer(Extension(app_overrides))
         .layer(Extension(analytics))

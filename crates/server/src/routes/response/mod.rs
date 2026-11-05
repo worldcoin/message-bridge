@@ -1,4 +1,4 @@
-use aide::axum::{routing::get, ApiRouter};
+use aide::axum::{routing::get_with, ApiRouter};
 use axum::http::Method;
 use schemars::JsonSchema;
 use tower_http::cors::{AllowHeaders, Any, CorsLayer};
@@ -29,7 +29,7 @@ pub fn handler() -> ApiRouter {
 
     ApiRouter::new().api_route(
         "/response/{request_id}",
-        get(get::handler)
+        get_with(get::handler, get::documentation)
             .head(head::handler)
             .put(put::handler)
             .layer(cors),
