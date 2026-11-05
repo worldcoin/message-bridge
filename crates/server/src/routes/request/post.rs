@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     observability,
+    routes::response::RES_PREFIX,
     utils::{
         handle_redis_error, validate_request_id, AppOverrides, RequestPayload, RequestStatus,
         EXPIRE_AFTER_SECONDS, REQ_STATUS_PREFIX,
@@ -102,6 +103,20 @@ pub(super) async fn handler(
     let payload = RequestPayload::new(iv, payload);
     let payload_bytes =
         serde_json::to_vec(&payload).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Check and creation can still race; this is a first step toward a broader session storage refactor.
+    let existing_keys: usize = redis
+        .exists(&[
+            format!("{REQ_PREFIX}{request_id}"),
+            format!("{REQ_STATUS_PREFIX}{request_id}"),
+            format!("{RES_PREFIX}{request_id}"),
+            observability::flow_key(&request_id),
+        ])
+        .await
+        .map_err(handle_redis_error)?;
+    if existing_keys > 0 {
+        return Err(StatusCode::CONFLICT);
+    }
 
     let options = SetOptions::default()
         .conditional_set(ExistenceCheck::NX)

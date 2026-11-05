@@ -1209,7 +1209,7 @@ async fn test_client_name_recognizes_id_and_money_app_variants() {
 }
 
 #[tokio::test]
-async fn test_supports_flow_telemetry_and_client_name_do_not_leak_across_a_reused_request_id() {
+async fn test_active_request_id_cannot_be_reused_after_request_consumption() {
     let app = common::test_app().await;
     let request_id = fresh_id();
 
@@ -1240,18 +1240,42 @@ async fn test_supports_flow_telemetry_and_client_name_do_not_leak_across_a_reuse
         "payload": "reuse-second-payload",
     });
     let (status, body) = common::post(&app, "/request", &second).await;
-    assert_eq!(status, 200, "second request creation failed: {body}");
-
-    let (status, body) = common::get(&app, &format!("/request/{request_id}")).await;
-    assert_eq!(status, 200, "second request consumption failed: {body}");
+    assert_eq!(status, 409, "active session ID must stay reserved: {body}");
     assert_eq!(
         supports_flow_telemetry(&request_id).await.as_deref(),
-        Some("false"),
-        "the second flow's own (header-less) fetch must overwrite the first flow's true"
+        Some("true")
     );
-    assert_eq!(
-        client_name(&request_id).await.as_deref(),
-        Some("unknown"),
-        "the second flow's own (header-less) fetch must overwrite the first flow's ios"
-    );
+    assert_eq!(client_name(&request_id).await.as_deref(), Some("ios"));
+}
+
+#[tokio::test]
+async fn test_each_session_key_independently_blocks_request_creation() {
+    let app = common::test_app().await;
+    let mut redis = common::redis_connection().await;
+
+    for prefix in ["req:", "req:status:", "res:", "flow:"] {
+        let request_id = fresh_id();
+        let key = format!("{prefix}{request_id}");
+        redis
+            .set_ex::<_, _, ()>(&key, "existing-session", 900)
+            .await
+            .unwrap();
+        let request = json!({
+            "request_id": request_id,
+            "iv": "iv",
+            "payload": "payload",
+        });
+
+        let (status, body) = common::post(&app, "/request", &request).await;
+        assert_eq!(status, 409, "{prefix} must block reuse: {body}");
+        let stored: String = redis.get(&key).await.unwrap();
+        assert_eq!(stored, "existing-session");
+
+        redis.del::<_, ()>(&key).await.unwrap();
+        let (status, body) = common::post(&app, "/request", &request).await;
+        assert_eq!(
+            status, 200,
+            "ID must be reusable once keys are gone: {body}"
+        );
+    }
 }
