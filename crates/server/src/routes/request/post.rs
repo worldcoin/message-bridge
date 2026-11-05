@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{http::StatusCode, Extension};
 use axum_jsonschema::Json;
-use redis::{aio::ConnectionManager, AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
+use redis::aio::ConnectionManager;
 use schemars::JsonSchema;
 use uuid::Uuid;
 
@@ -112,67 +112,35 @@ pub(super) async fn handler(
     let payload_bytes =
         serde_json::to_vec(&payload).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Check and creation can still race; this is a first step toward a broader session storage refactor.
-    let existing_keys: usize = redis
-        .exists(&[
-            format!("{REQ_PREFIX}{request_id}"),
-            format!("{REQ_STATUS_PREFIX}{request_id}"),
-            format!("{RES_PREFIX}{request_id}"),
-            observability::flow_key(&request_id),
-            response_token::key(&request_id),
-            existence_check::key(&request_id),
-        ])
-        .await
-        .map_err(handle_redis_error)?;
-    if existing_keys > 0 {
-        return Err(StatusCode::CONFLICT);
-    }
-
     let response_read_token = if require_token_to_read_response {
-        let token = response_token::generate()?;
-        let stored: Option<String> = redis
-            .set_options(
-                response_token::key(&request_id),
-                response_token::hash(&token).as_ref(),
-                SetOptions::default()
-                    .conditional_set(ExistenceCheck::NX)
-                    .with_expiration(SetExpiry::EX(response_token::TOKEN_EXPIRE_AFTER_SECONDS)),
-            )
-            .await
-            .map_err(handle_redis_error)?;
-        if stored.is_none() {
-            return Err(StatusCode::CONFLICT);
-        }
-        Some(token)
+        Some(response_token::generate()?)
     } else {
         None
     };
-
-    let options = SetOptions::default()
-        .conditional_set(ExistenceCheck::NX)
-        .with_expiration(SetExpiry::EX(EXPIRE_AFTER_SECONDS));
-
-    let set_ok: Option<String> = redis
-        .set_options(format!("{REQ_PREFIX}{request_id}"), payload_bytes, options)
+    let token_hash = response_read_token.as_deref().map(response_token::hash);
+    let created: bool = redis::cmd("EVAL")
+        .arg(include_str!("create.lua"))
+        .arg(6)
+        .arg(format!("{REQ_PREFIX}{request_id}"))
+        .arg(format!("{REQ_STATUS_PREFIX}{request_id}"))
+        .arg(format!("{RES_PREFIX}{request_id}"))
+        .arg(observability::flow_key(&request_id))
+        .arg(response_token::key(&request_id))
+        .arg(existence_check::key(&request_id))
+        .arg(payload_bytes)
+        .arg(RequestStatus::Initialized.to_string())
+        .arg(EXPIRE_AFTER_SECONDS)
+        .arg(require_token_to_read_response)
+        .arg(token_hash.as_ref().map_or(&[][..], |hash| hash.as_ref()))
+        .arg(response_token::TOKEN_EXPIRE_AFTER_SECONDS)
+        .arg(is_client_supplied_id)
+        .arg(existence_check::EXPIRE_AFTER_SECONDS)
+        .query_async(&mut redis)
         .await
         .map_err(handle_redis_error)?;
-
-    if set_ok.is_none() {
+    if !created {
         return Err(StatusCode::CONFLICT);
     }
-
-    if is_client_supplied_id {
-        existence_check::protect(&mut redis, &request_id).await?;
-    }
-
-    redis
-        .set_ex::<_, _, ()>(
-            format!("{REQ_STATUS_PREFIX}{request_id}"),
-            RequestStatus::Initialized.to_string(),
-            EXPIRE_AFTER_SECONDS,
-        )
-        .await
-        .map_err(handle_redis_error)?;
 
     if let Err(outcome) = observability::mint_and_store_idkit_flow_id(&mut redis, &request_id).await
     {

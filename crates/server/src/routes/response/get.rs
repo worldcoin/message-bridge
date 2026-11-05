@@ -83,73 +83,45 @@ async fn poll(
     let request_id = request_id.to_lowercase();
     validate_request_id(&request_id)?;
 
-    let token_hash: Option<Vec<u8>> = redis
-        .get(response_token::key(&request_id))
-        .await
-        .map_err(handle_redis_error)?;
-    if let Some(token_hash) = token_hash {
-        // Cleanup can fail after consumption; an orphan credential must not turn
-        // a missing session into a 401.
-        let exists: usize = redis
-            .exists(&[
-                format!("{REQ_STATUS_PREFIX}{request_id}"),
-                format!("{RES_PREFIX}{request_id}"),
-            ])
+    // Keep credential parsing and constant-time verification in Rust. Redis
+    // consumes only if the exact credential state we checked is still current.
+    let (status, value, flow, supports_flow_telemetry, client_name) = loop {
+        let token_hash: Option<Vec<u8>> = redis
+            .get(response_token::key(&request_id))
             .await
             .map_err(handle_redis_error)?;
-        if exists == 0 {
-            return Err(StatusCode::NOT_FOUND);
+        let authenticated = token_hash
+            .as_deref()
+            .is_some_and(|hash| response_token::authenticates(&headers, hash));
+        let (result, values): (u16, Option<PollResult>) = redis::cmd("EVAL")
+            .arg(include_str!("consume.lua"))
+            .arg(6)
+            .arg(response_token::key(&request_id))
+            .arg(format!("{REQ_STATUS_PREFIX}{request_id}"))
+            .arg(format!("{RES_PREFIX}{request_id}"))
+            .arg(observability::flow_key(&request_id))
+            .arg(observability::supports_flow_telemetry_key(&request_id))
+            .arg(observability::client_name_key(&request_id))
+            .arg(token_hash.is_some())
+            .arg(token_hash.as_deref().unwrap_or_default())
+            .arg(authenticated)
+            .query_async(&mut redis)
+            .await
+            .map_err(handle_redis_error)?;
+        match result {
+            0 => {}
+            200 => break values.ok_or(StatusCode::INTERNAL_SERVER_ERROR)?,
+            code => {
+                return Err(StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+            }
         }
-        if token_hash.len() != 32 {
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-        if !response_token::authenticates(&headers, &token_hash) {
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-    }
-
-    // Read the correlation key without consuming it while the response is
-    // still being polled. Successful response delivery cleans it up below.
-    let mut pipe = redis::pipe();
-    pipe.atomic()
-        .get(format!("{REQ_STATUS_PREFIX}{request_id}"))
-        .get_del(format!("{RES_PREFIX}{request_id}"))
-        .get(observability::flow_key(&request_id))
-        .get(observability::supports_flow_telemetry_key(&request_id))
-        .get(observability::client_name_key(&request_id));
-
-    let (status, value, flow, supports_flow_telemetry, client_name): PollResult = pipe
-        .query_async(&mut redis)
-        .await
-        .map_err(handle_redis_error)?;
+    };
 
     observability::record_response_handoff(flow.as_deref());
 
     if let Some(value) = value {
         let stored_response: StoredResponse =
             serde_json::from_slice(&value).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-        // Cleanup is best effort after GETDEL: the correlation key has a
-        // fixed expiry and response delivery must not fail because of it.
-        let mut cleanup = redis::pipe();
-        cleanup
-            .atomic()
-            .del(format!("{REQ_STATUS_PREFIX}{request_id}"))
-            .del(observability::flow_key(&request_id))
-            .del(observability::supports_flow_telemetry_key(&request_id))
-            .del(observability::client_name_key(&request_id))
-            .del(response_token::key(&request_id));
-        if cleanup
-            .query_async::<(u64, u64, u64, u64, u64)>(&mut redis)
-            .await
-            .is_err()
-        {
-            tracing::warn!(
-                outcome = "flow_id_cleanup_failed",
-                operation = "response_handoff",
-                "Failed to clean up IDKit flow ID"
-            );
-        }
 
         telemetry_batteries::reexports::metrics::counter!(
             "message_bridge.response_consumed",
