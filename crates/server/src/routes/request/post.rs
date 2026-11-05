@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use uuid::Uuid;
 
 use crate::{
-    observability, response_token,
+    existence_check, observability, response_token,
     routes::response::RES_PREFIX,
     utils::{
         handle_redis_error, validate_request_id, AppOverrides, RequestPayload, RequestStatus,
@@ -98,6 +98,7 @@ pub(super) async fn handler(
         require_token_to_read_response,
     } = body;
 
+    let is_client_supplied_id = request_id.is_some();
     let request_id = match request_id {
         Some(id) => {
             let id = id.to_lowercase();
@@ -119,6 +120,7 @@ pub(super) async fn handler(
             format!("{RES_PREFIX}{request_id}"),
             observability::flow_key(&request_id),
             response_token::key(&request_id),
+            existence_check::key(&request_id),
         ])
         .await
         .map_err(handle_redis_error)?;
@@ -157,6 +159,10 @@ pub(super) async fn handler(
 
     if set_ok.is_none() {
         return Err(StatusCode::CONFLICT);
+    }
+
+    if is_client_supplied_id {
+        existence_check::protect(&mut redis, &request_id).await?;
     }
 
     redis

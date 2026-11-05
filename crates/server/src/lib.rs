@@ -9,6 +9,7 @@ use redis::aio::ConnectionManager;
 pub mod analytics;
 use crate::{analytics::Analytics, utils::AppOverrides};
 
+mod existence_check;
 pub(crate) mod observability;
 mod response_token;
 pub mod routes;

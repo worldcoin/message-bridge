@@ -74,6 +74,7 @@ pub(super) async fn handler(
     let payload: RequestPayload =
         serde_json::from_slice(&value).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    crate::existence_check::refresh(&mut redis, &request_id).await?;
     crate::response_token::refresh(&mut redis, &request_id).await?;
 
     redis

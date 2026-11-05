@@ -19,6 +19,7 @@ pub(super) async fn handler(
     let request_id = request_id.to_lowercase();
     validate_request_id(&request_id)?;
 
+    crate::existence_check::refresh(&mut redis, &request_id).await?;
     crate::response_token::refresh(&mut redis, &request_id).await?;
 
     redis
