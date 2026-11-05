@@ -220,7 +220,7 @@ pub fn record_request_handoff(value: Option<&str>) -> Option<IdkitFlowId> {
 
 /// Record a response-side flow identifier when one exists.
 ///
-/// Missing identifiers are expected for standalone and legacy response flows.
+/// Missing identifiers are expected for legacy response flows.
 /// Malformed identifiers are reported but never block payload delivery.
 pub fn record_response_handoff(value: Option<&str>) {
     let Some(value) = value else {
