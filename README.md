@@ -30,11 +30,16 @@ Bridge ->> IDKit: <response>
 
 - `POST /request`: Called by IDKit. Initializes a proof verification request.
 - `GET /request/:id`: Called by Authenticator. Used to fetch the proof verification request. One time use.
-- `HEAD /request/:id`: Existence check for a request. `200` if present, `404` otherwise.
+- `HEAD /request/:id`: Existence check for a request. `200` if present and allowed, `404` otherwise (see HEAD visibility below).
 - `PUT /response/:id`: Called by Authenticator. Used to send the proof back to the application.
 - `GET /response/:id`: Called by IDKit. Continuous pulling to fetch the status of the request and the response if available. Response can only be retrieved once.
-- `HEAD /response/:id`: Existence check for a request's status. `200` if present, `404` otherwise.
+- `HEAD /response/:id`: Existence check for a request's status. `200` if present and allowed, `404` otherwise (see HEAD visibility below).
 - `PUT /request/:id`: Staging only (`ENVIRONMENT == "staging"`). Idempotent request upsert.
+
+### HEAD checks
+
+Both HEAD endpoints return `404` for requests created with a client-supplied
+`request_id`. Server-generated IDs retain normal existence checks.
 
 ### Optional response-read token
 
@@ -47,7 +52,7 @@ Authorization: Bearer <response_read_token>
 ```
 
 Missing or invalid credentials return `401` with `WWW-Authenticate: Bearer`
-without consuming the response. HEAD and other endpoints remain public.
+without consuming the response.
 
 Tokens cannot be recovered or rotated.
 

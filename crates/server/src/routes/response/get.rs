@@ -29,7 +29,7 @@ pub(super) struct Response {
 
 pub(super) fn documentation(operation: TransformOperation<'_>) -> TransformOperation<'_> {
     let mut operation = operation
-        .description("Poll status or consume the response once. Every poll requires Authorization: Bearer <response_read_token> when POST /request opted in with require_token_to_read_response. HEAD remains public.")
+        .description("Poll status or consume the response once. Every poll requires Authorization: Bearer <response_read_token> when POST /request opted in with require_token_to_read_response.")
         .security_requirement("response_read_token")
         .response::<200, Json<Response>>()
         .response_with::<401, (), _>(|response| response.description("Missing, malformed, or incorrect response token. WWW-Authenticate: Bearer."));
