@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use uuid::Uuid;
 
 use crate::{
-    observability,
+    observability, response_token,
     routes::response::RES_PREFIX,
     utils::{
         handle_redis_error, validate_request_id, AppOverrides, RequestPayload, RequestStatus,
@@ -52,6 +52,9 @@ pub(super) struct CreateRequestBody {
     /// can never break them. Updated SDKs send `true` to receive overrides.
     #[serde(default)]
     supports_app_overrides: bool,
+    /// Require the returned response token on every GET /response/:id poll.
+    #[serde(default)]
+    require_token_to_read_response: bool,
 }
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -66,6 +69,9 @@ pub(super) struct RequestCreatedPayload {
     /// response shape.
     #[serde(skip_serializing_if = "AppOverrides::is_empty")]
     app_overrides: AppOverrides,
+    /// Standard padded Base64 of 32 random bytes; returned only when requested.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_read_token: Option<String>,
 }
 
 /// Create a new request. Optionally accepts a client-supplied `request_id`
@@ -89,6 +95,7 @@ pub(super) async fn handler(
         payload,
         request_id,
         supports_app_overrides,
+        require_token_to_read_response,
     } = body;
 
     let request_id = match request_id {
@@ -111,12 +118,33 @@ pub(super) async fn handler(
             format!("{REQ_STATUS_PREFIX}{request_id}"),
             format!("{RES_PREFIX}{request_id}"),
             observability::flow_key(&request_id),
+            response_token::key(&request_id),
         ])
         .await
         .map_err(handle_redis_error)?;
     if existing_keys > 0 {
         return Err(StatusCode::CONFLICT);
     }
+
+    let response_read_token = if require_token_to_read_response {
+        let token = response_token::generate()?;
+        let stored: Option<String> = redis
+            .set_options(
+                response_token::key(&request_id),
+                response_token::hash(&token).as_ref(),
+                SetOptions::default()
+                    .conditional_set(ExistenceCheck::NX)
+                    .with_expiration(SetExpiry::EX(response_token::TOKEN_EXPIRE_AFTER_SECONDS)),
+            )
+            .await
+            .map_err(handle_redis_error)?;
+        if stored.is_none() {
+            return Err(StatusCode::CONFLICT);
+        }
+        Some(token)
+    } else {
+        None
+    };
 
     let options = SetOptions::default()
         .conditional_set(ExistenceCheck::NX)
@@ -153,6 +181,7 @@ pub(super) async fn handler(
     Ok(Json(RequestCreatedPayload {
         request_id,
         app_overrides: select_response_overrides(supports_app_overrides, &app_overrides),
+        response_read_token,
     }))
 }
 

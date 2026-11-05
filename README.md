@@ -36,6 +36,21 @@ Bridge ->> IDKit: <response>
 - `HEAD /response/:id`: Existence check for a request's status. `200` if present, `404` otherwise.
 - `PUT /request/:id`: Staging only (`ENVIRONMENT == "staging"`). Idempotent request upsert.
 
+### Optional response-read token
+
+`POST /request` accepts `require_token_to_read_response` (default `false`). When
+`true`, it returns `response_read_token`: 32 random bytes encoded as standard padded
+Base64. Every `GET /response/:id` poll then requires:
+
+```http
+Authorization: Bearer <response_read_token>
+```
+
+Missing or invalid credentials return `401` with `WWW-Authenticate: Bearer`
+without consuming the response. HEAD and other endpoints remain public.
+
+Tokens cannot be recovered or rotated.
+
 Response uploads may include an optional `tracking_receipt` alongside `iv` and
 `payload`. The receipt remains opaque, expires with the response, and is never
 returned to the response consumer. When `ANALYTICS_CALLBACK_URL` is set, the bridge

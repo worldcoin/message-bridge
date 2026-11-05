@@ -54,6 +54,8 @@ pub(super) async fn handler(
 
     observability::record_response_handoff(flow.as_deref());
 
+    crate::response_token::refresh(&mut redis, &request_id).await?;
+
     let options = SetOptions::default()
         .conditional_set(ExistenceCheck::NX)
         .with_expiration(SetExpiry::EX(EXPIRE_AFTER_SECONDS));

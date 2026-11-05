@@ -15,13 +15,17 @@ test-util = []
 aide = { workspace = true }
 axum = { workspace = true }
 axum-jsonschema = { workspace = true }
+base64 = { workspace = true }
 dotenvy = { workspace = true }
+headers = { workspace = true }
 redis = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-no-provider"] }
+ring = { workspace = true }
 rustls = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+subtle = { workspace = true }
 telemetry-batteries = { workspace = true }
 tokio = { workspace = true }
 tower-http = { workspace = true }
