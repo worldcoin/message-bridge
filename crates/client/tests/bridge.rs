@@ -65,7 +65,7 @@ async fn rejects_invalid_responses_and_unsupported_base_urls() {
             |axum::extract::Path(id): axum::extract::Path<String>| async move {
                 match id.as_str() {
                     "malformed" => (axum::http::StatusCode::OK, "not JSON".to_owned()),
-                    "oversized" => (axum::http::StatusCode::OK, "x".repeat(5 * 1024 * 1024 + 1)),
+                    "oversized" => (axum::http::StatusCode::OK, "x".repeat(22 * 1024 * 1024 + 1)),
                     _ => (axum::http::StatusCode::FORBIDDEN, String::new()),
                 }
             },

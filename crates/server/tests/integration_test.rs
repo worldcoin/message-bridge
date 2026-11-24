@@ -269,6 +269,42 @@ async fn test_put_response_for_request() {
     assert_eq!(put_status, 201);
 }
 
+/// Test only PUT /response/:id accepts bodies up to the configured response body limit
+#[tokio::test]
+async fn test_response_body_limit_applies_to_put_response_only() {
+    const RAISED_LIMIT: usize = 8 * 1024 * 1024;
+    const REJECTED: u16 = 400;
+    let large_payload = json!({ "iv": "iv", "payload": "x".repeat(6 * 1024 * 1024) });
+    let over_raised_limit = json!({ "iv": "iv", "payload": "x".repeat(RAISED_LIMIT) });
+    let small_payload = json!({ "iv": "iv", "payload": "payload" });
+
+    let default_app = common::test_app().await;
+    let raised_app = common::test_app_with_response_body_limit(RAISED_LIMIT).await;
+    for (app, rejected_payload, accepted_payload) in [
+        (&default_app, &large_payload, &small_payload),
+        (&raised_app, &over_raised_limit, &large_payload),
+    ] {
+        let (status_code, body) = common::post(app, "/request", &small_payload).await;
+        assert_eq!(status_code, 200);
+        let create_json: Value = serde_json::from_str(&body).expect("Failed to parse JSON");
+        let put_url = format!("/response/{}", create_json["request_id"].as_str().unwrap());
+
+        assert_eq!(
+            common::put(app, &put_url, rejected_payload).await.0,
+            REJECTED
+        );
+        assert_eq!(common::put(app, &put_url, accepted_payload).await.0, 201);
+        assert_eq!(
+            common::post(app, "/request", &large_payload).await.0,
+            REJECTED
+        );
+        assert_eq!(
+            common::post(app, "/response", &large_payload).await.0,
+            REJECTED
+        );
+    }
+}
+
 /// Test GET /response/:id retrieves the response
 #[tokio::test]
 async fn test_get_response() {

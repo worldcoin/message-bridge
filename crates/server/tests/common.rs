@@ -10,8 +10,8 @@ use axum::body::Body;
 use axum::http::{Method, Request};
 use http_body_util::BodyExt;
 use message_bridge::analytics::Analytics;
-use message_bridge::app;
 use message_bridge::utils::{AppOverride, AppOverrides};
+use message_bridge::{app, DEFAULT_BODY_LIMIT};
 use redis::aio::ConnectionManager;
 use serde_json::Value;
 use tower::ServiceExt;
@@ -46,10 +46,15 @@ pub async fn redis_connection() -> ConnectionManager {
 
 /// Build the real bridge router, wired to a local Redis and the override fixture.
 pub async fn test_app() -> axum::Router {
+    test_app_with_response_body_limit(DEFAULT_BODY_LIMIT).await
+}
+
+pub async fn test_app_with_response_body_limit(response_body_limit: usize) -> axum::Router {
     app(
         redis_connection().await,
         Arc::new(fixture_overrides()),
         None,
+        response_body_limit,
     )
 }
 
@@ -63,6 +68,7 @@ pub async fn test_app_with_analytics(callback_url: &str) -> axum::Router {
         redis_connection().await,
         Arc::new(fixture_overrides()),
         Some(Arc::new(analytics)),
+        DEFAULT_BODY_LIMIT,
     )
 }
 

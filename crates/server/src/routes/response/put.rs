@@ -54,16 +54,17 @@ pub(super) async fn handler(
 
     observability::record_response_handoff(flow.as_deref());
 
+    let stored = serde_json::to_vec(&request).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    #[allow(clippy::cast_precision_loss)]
+    telemetry_batteries::reexports::metrics::histogram!("message_bridge.response_stored_bytes")
+        .record(stored.len() as f64);
+
     let options = SetOptions::default()
         .conditional_set(ExistenceCheck::NX)
         .with_expiration(SetExpiry::EX(EXPIRE_AFTER_SECONDS));
 
     let set_ok: Option<String> = redis
-        .set_options(
-            format!("{RES_PREFIX}{request_id}"),
-            serde_json::to_vec(&request).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-            options,
-        )
+        .set_options(format!("{RES_PREFIX}{request_id}"), stored, options)
         .await
         .map_err(handle_redis_error)?;
 

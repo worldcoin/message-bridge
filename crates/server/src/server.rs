@@ -15,8 +15,9 @@ pub async fn start(
     redis: ConnectionManager,
     app_overrides: Arc<AppOverrides>,
     analytics: Option<Arc<Analytics>>,
+    response_body_limit: usize,
 ) {
-    let router = crate::app(redis, app_overrides, analytics);
+    let router = crate::app(redis, app_overrides, analytics, response_body_limit);
 
     let address = SocketAddr::from((
         [0, 0, 0, 0],

@@ -32,7 +32,7 @@ impl TestServer {
         .await??;
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let base_url = format!("http://{}", listener.local_addr()?);
-        let router = crate::app(redis, Arc::default(), None);
+        let router = crate::app(redis, Arc::default(), None, crate::DEFAULT_BODY_LIMIT);
         let (stop, stopped) = oneshot::channel();
         let task = tokio::spawn(async move {
             axum::serve(listener, router)

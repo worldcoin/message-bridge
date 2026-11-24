@@ -13,8 +13,9 @@ use futures_util::StreamExt as _;
 use reqwest::{RequestBuilder, Response, StatusCode, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-/// The message bridge's response body limit.
-const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;
+/// The largest bridge reply the client reads: 22 MiB, which holds the largest response a bridge
+/// deployment is expected to relay.
+const MAX_BODY_SIZE: usize = 22 * 1024 * 1024;
 
 /// The time budget of one operation, including its retries and reading the response.
 const OPERATION_TIMEOUT: Duration = Duration::from_mins(1);
@@ -42,8 +43,8 @@ pub enum BridgeError {
     /// The bridge returned malformed JSON.
     #[error("invalid bridge response: {0}")]
     Json(#[from] serde_json::Error),
-    /// The bridge response exceeded the bridge's body limit.
-    #[error("bridge response exceeds the 5 MiB body limit")]
+    /// The bridge reply exceeded the largest body the client reads.
+    #[error("bridge response exceeds the 22 MiB body limit")]
     TooLarge,
     /// The operation exhausted its time budget.
     #[error("bridge operation timed out")]
