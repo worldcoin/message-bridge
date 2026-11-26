@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use message_bridge::analytics::Analytics;
 use message_bridge::utils::AppOverrides;
+use message_bridge::{DEFAULT_BODY_LIMIT, MAX_RESPONSE_BODY_LIMIT};
 
 #[tokio::main]
 async fn main() {
@@ -51,7 +52,30 @@ async fn main() {
     let app_overrides = Arc::new(load_app_overrides());
     let analytics = load_analytics(env::var("ANALYTICS_CALLBACK_URL")).map(Arc::new);
 
-    message_bridge::server::start(redis, app_overrides, analytics).await;
+    let response_body_limit = load_response_body_limit(env::var("RESPONSE_BODY_LIMIT_BYTES"));
+
+    message_bridge::server::start(redis, app_overrides, analytics, response_body_limit).await;
+}
+
+/// Reads the largest `PUT /response/:id` body from the `RESPONSE_BODY_LIMIT_BYTES` env var.
+///
+/// Unset ⇒ [`DEFAULT_BODY_LIMIT`]; clearing the variable and restarting restores it. A value
+/// that is unparseable or outside [`DEFAULT_BODY_LIMIT`]..=[`MAX_RESPONSE_BODY_LIMIT`] is a
+/// fatal startup error instead of a silent fallback to the default: a limit below the default
+/// would break existing clients, and one above the maximum is most likely a units mistake.
+fn load_response_body_limit(value: Result<String, env::VarError>) -> usize {
+    let limit: usize = match value {
+        Ok(limit) => limit
+            .parse()
+            .expect("RESPONSE_BODY_LIMIT_BYTES must be a number of bytes"),
+        Err(env::VarError::NotPresent) => return DEFAULT_BODY_LIMIT,
+        Err(error) => panic!("Failed to read RESPONSE_BODY_LIMIT_BYTES: {error}"),
+    };
+    assert!(
+        (DEFAULT_BODY_LIMIT..=MAX_RESPONSE_BODY_LIMIT).contains(&limit),
+        "RESPONSE_BODY_LIMIT_BYTES must be between {DEFAULT_BODY_LIMIT} and {MAX_RESPONSE_BODY_LIMIT}"
+    );
+    limit
 }
 
 fn load_analytics(value: Result<String, env::VarError>) -> Option<Analytics> {
@@ -113,8 +137,43 @@ async fn build_redis_pool(redis_url: String) -> redis::RedisResult<ConnectionMan
 
 #[cfg(test)]
 mod tests {
-    use crate::load_analytics;
+    use crate::{load_analytics, load_response_body_limit};
+    use message_bridge::DEFAULT_BODY_LIMIT;
     use std::env::VarError;
+
+    #[test]
+    fn unset_response_body_limit_is_the_default() {
+        assert_eq!(
+            load_response_body_limit(Err(VarError::NotPresent)),
+            DEFAULT_BODY_LIMIT
+        );
+    }
+
+    #[test]
+    fn configured_response_body_limit_is_used() {
+        assert_eq!(
+            load_response_body_limit(Ok("23068672".to_owned())),
+            23_068_672
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "RESPONSE_BODY_LIMIT_BYTES must be between")]
+    fn response_body_limit_below_the_default_fails_startup() {
+        load_response_body_limit(Ok("0".to_owned()));
+    }
+
+    #[test]
+    #[should_panic(expected = "RESPONSE_BODY_LIMIT_BYTES must be between")]
+    fn response_body_limit_above_the_maximum_fails_startup() {
+        load_response_body_limit(Ok("23068672000".to_owned()));
+    }
+
+    #[test]
+    #[should_panic(expected = "RESPONSE_BODY_LIMIT_BYTES must be a number of bytes")]
+    fn malformed_response_body_limit_fails_startup() {
+        load_response_body_limit(Ok("22MiB".to_owned()));
+    }
 
     #[test]
     fn unset_callback_disables_analytics() {

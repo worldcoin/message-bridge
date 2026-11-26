@@ -17,7 +17,17 @@ pub mod utils;
 #[cfg(feature = "test-util")]
 pub mod test_util;
 
+/// The largest request body the bridge accepts, unless a route sets its own limit.
+pub const DEFAULT_BODY_LIMIT: usize = 5 * 1024 * 1024;
+
+/// The largest `PUT /response/:id` body limit a deployment may configure. Bodies are buffered
+/// in memory and stored in Redis, so the limit itself is bounded.
+pub const MAX_RESPONSE_BODY_LIMIT: usize = 64 * 1024 * 1024;
+
 /// Assemble the fully-wired application router.
+///
+/// `response_body_limit` is the largest `PUT /response/:id` body in bytes. Every other route
+/// accepts at most [`DEFAULT_BODY_LIMIT`].
 ///
 /// Shared by the binary (via [`server::start`]) and the integration tests so
 /// both exercise the exact same routes, middleware stack, and `OpenAPI` document.
@@ -27,6 +37,7 @@ pub fn app(
     redis: ConnectionManager,
     app_overrides: Arc<AppOverrides>,
     analytics: Option<Arc<Analytics>>,
+    response_body_limit: usize,
 ) -> axum::Router {
     let mut openapi = OpenApi {
         info: Info {
@@ -44,11 +55,11 @@ pub fn app(
         ..Default::default()
     };
 
-    routes::handler()
+    routes::handler(response_body_limit)
         .finish_api(&mut openapi)
         .layer(Extension(redis))
         .layer(Extension(app_overrides))
         .layer(Extension(analytics))
         .layer(Extension(openapi))
-        .layer(DefaultBodyLimit::max(5 * 1024 * 1024))
+        .layer(DefaultBodyLimit::max(DEFAULT_BODY_LIMIT))
 }

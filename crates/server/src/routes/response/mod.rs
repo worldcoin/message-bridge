@@ -2,7 +2,7 @@ use aide::axum::{
     routing::{get, post},
     ApiRouter,
 };
-use axum::http::Method;
+use axum::{extract::DefaultBodyLimit, http::Method};
 use schemars::JsonSchema;
 use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 
@@ -25,7 +25,7 @@ pub(super) struct StoredResponse {
     pub(super) tracking_receipt: Option<String>,
 }
 
-pub fn handler() -> ApiRouter {
+pub fn handler(response_body_limit: usize) -> ApiRouter {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_headers(AllowHeaders::any())
@@ -37,7 +37,7 @@ pub fn handler() -> ApiRouter {
             get(get::handler)
                 .head(head::handler)
                 .put(put::handler)
-                .layer(cors.clone()),
+                .layer((cors.clone(), DefaultBodyLimit::max(response_body_limit))),
         )
         .api_route("/response", post(post::handler).layer(cors))
 }
