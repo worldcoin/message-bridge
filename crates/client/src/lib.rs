@@ -35,6 +35,7 @@ const RESPONSE_TRANSFER_LIMITS: TimeLimits = TimeLimits {
 struct TimeLimits {
     /// The timeout of each HTTP request, from sending it to the end of its response body.
     /// Browsers decide request timeouts themselves.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     request: Duration,
     /// The time budget of the whole operation, including its retries and reading the response.
     operation: Duration,
