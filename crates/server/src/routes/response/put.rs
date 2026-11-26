@@ -55,9 +55,7 @@ pub(super) async fn handler(
     observability::record_response_handoff(flow.as_deref());
 
     let stored = serde_json::to_vec(&request).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    #[allow(clippy::cast_precision_loss)]
-    telemetry_batteries::reexports::metrics::histogram!("message_bridge.response_stored_bytes")
-        .record(stored.len() as f64);
+    let stored_bytes = stored.len();
 
     let options = SetOptions::default()
         .conditional_set(ExistenceCheck::NX)
@@ -71,6 +69,10 @@ pub(super) async fn handler(
     if set_ok.is_none() {
         return Err(StatusCode::CONFLICT);
     }
+
+    #[allow(clippy::cast_precision_loss)]
+    telemetry_batteries::reexports::metrics::histogram!("message_bridge.response_stored_bytes")
+        .record(stored_bytes as f64);
 
     // The response now represents completion, so the request status is no longer needed.
     redis
