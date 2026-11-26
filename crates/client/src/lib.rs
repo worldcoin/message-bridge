@@ -17,8 +17,28 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 /// deployment is expected to relay.
 const MAX_BODY_SIZE: usize = 22 * 1024 * 1024;
 
-/// The time budget of one operation, including its retries and reading the response.
-const OPERATION_TIMEOUT: Duration = Duration::from_mins(1);
+/// The time limits of the operations that carry a request or a response state.
+const CONTROL_LIMITS: TimeLimits = TimeLimits {
+    request: Duration::from_secs(30),
+    operation: Duration::from_mins(1),
+};
+
+/// The time limits of the operations that can carry a full response (`PUT /response/:id` and
+/// `GET /response/:id`), sized for a slow mobile connection.
+const RESPONSE_TRANSFER_LIMITS: TimeLimits = TimeLimits {
+    request: Duration::from_mins(2),
+    operation: Duration::from_mins(5),
+};
+
+/// How long a bridge operation may take.
+#[derive(Clone, Copy)]
+struct TimeLimits {
+    /// The timeout of each HTTP request, from sending it to the end of its response body.
+    /// Browsers decide request timeouts themselves.
+    request: Duration,
+    /// The time budget of the whole operation, including its retries and reading the response.
+    operation: Duration,
+}
 
 /// A client for one bridge deployment.
 ///
@@ -121,9 +141,12 @@ impl BridgeClient {
             request_id: request_id.to_string(),
             request,
         };
-        bounded(async {
+        bounded(CONTROL_LIMITS, async {
             let response = self
-                .send(self.http.post(self.url(&["request"])).json(&body))
+                .send(
+                    self.http.post(self.url(&["request"])).json(&body),
+                    CONTROL_LIMITS,
+                )
                 .await?;
             match response.status() {
                 StatusCode::OK | StatusCode::CONFLICT => Ok(()),
@@ -142,7 +165,8 @@ impl BridgeClient {
         &self,
         request_id: &str,
     ) -> Result<Option<EncryptedPayload>, BridgeError> {
-        self.read(self.url(&["request", request_id])).await
+        self.read(self.url(&["request", request_id]), CONTROL_LIMITS)
+            .await
     }
 
     /// Reads the state of the response (`GET /response/:id`), consuming a completed one. Returns
@@ -154,7 +178,11 @@ impl BridgeClient {
         &self,
         request_id: &str,
     ) -> Result<Option<ResponseState>, BridgeError> {
-        self.read(self.url(&["response", request_id])).await
+        self.read(
+            self.url(&["response", request_id]),
+            RESPONSE_TRANSFER_LIMITS,
+        )
+        .await
     }
 
     /// Stores the encrypted response (`PUT /response/:id`). The bridge answers `201` once it
@@ -169,8 +197,10 @@ impl BridgeClient {
         response: &EncryptedPayload,
     ) -> Result<(), BridgeError> {
         let url = self.url(&["response", request_id]);
-        bounded(async {
-            let reply = self.send(self.http.put(url).json(response)).await?;
+        bounded(RESPONSE_TRANSFER_LIMITS, async {
+            let reply = self
+                .send(self.http.put(url).json(response), RESPONSE_TRANSFER_LIMITS)
+                .await?;
             match reply.status() {
                 StatusCode::CREATED => Ok(()),
                 status => Err(BridgeError::UnexpectedStatus(status)),
@@ -179,9 +209,13 @@ impl BridgeClient {
         .await
     }
 
-    async fn read<T: DeserializeOwned>(&self, url: Url) -> Result<Option<T>, BridgeError> {
-        bounded(async {
-            let response = self.http.get(url).send().await?;
+    async fn read<T: DeserializeOwned>(
+        &self,
+        url: Url,
+        limits: TimeLimits,
+    ) -> Result<Option<T>, BridgeError> {
+        bounded(limits, async {
+            let response = within(self.http.get(url), limits).send().await?;
             match response.status() {
                 StatusCode::OK => read_json(response).await.map(Some),
                 StatusCode::NOT_FOUND => Ok(None),
@@ -194,8 +228,12 @@ impl BridgeClient {
     /// Sends `request`, retrying transient failures.
     ///
     /// Each attempt owns its request so the operation remains `Send`.
-    async fn send(&self, request: RequestBuilder) -> Result<Response, BridgeError> {
-        let request = request.build()?;
+    async fn send(
+        &self,
+        request: RequestBuilder,
+        limits: TimeLimits,
+    ) -> Result<Response, BridgeError> {
+        let request = within(request, limits).build()?;
         let attempt = || {
             let http = self.http.clone();
             let request = request
@@ -257,15 +295,24 @@ fn http_client() -> Result<reqwest::Client, BridgeError> {
     #[cfg(not(target_arch = "wasm32"))]
     let builder = builder
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30));
+        .timeout(CONTROL_LIMITS.request);
     Ok(builder.build()?)
 }
 
-/// Runs a bridge operation within [`OPERATION_TIMEOUT`].
+/// Applies the request timeout of `limits` to `request`.
+#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
+fn within(request: RequestBuilder, limits: TimeLimits) -> RequestBuilder {
+    #[cfg(not(target_arch = "wasm32"))]
+    let request = request.timeout(limits.request);
+    request
+}
+
+/// Runs a bridge operation within the operation budget of `limits`.
 async fn bounded<T>(
+    limits: TimeLimits,
     operation: impl Future<Output = Result<T, BridgeError>>,
 ) -> Result<T, BridgeError> {
-    let timeout = backon::DefaultSleeper::default().sleep(OPERATION_TIMEOUT);
+    let timeout = backon::DefaultSleeper::default().sleep(limits.operation);
     match select(std::pin::pin!(operation), std::pin::pin!(timeout)).await {
         Either::Left((output, _)) => output,
         Either::Right(_) => Err(BridgeError::Timeout),

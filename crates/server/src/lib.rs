@@ -20,6 +20,10 @@ pub mod test_util;
 /// The largest request body the bridge accepts, unless a route sets its own limit.
 pub const DEFAULT_BODY_LIMIT: usize = 5 * 1024 * 1024;
 
+/// The largest `PUT /response/:id` body limit a deployment may configure. Bodies are buffered
+/// in memory and stored in Redis, so the limit itself is bounded.
+pub const MAX_RESPONSE_BODY_LIMIT: usize = 64 * 1024 * 1024;
+
 /// Assemble the fully-wired application router.
 ///
 /// `response_body_limit` is the largest `PUT /response/:id` body in bytes. Every other route

@@ -38,8 +38,11 @@ Bridge ->> IDKit: <response>
 - `PUT /request/:id`: Staging only (`ENVIRONMENT == "staging"`). Idempotent request upsert.
 
 Request bodies are limited to 5 MiB. `RESPONSE_BODY_LIMIT_BYTES` sets another limit for
-`PUT /response/:id` only; leave it unset to keep 5 MiB. Stored responses live in Redis for
-the session TTL, so size Redis for the limit before raising it.
+`PUT /response/:id` only, between 5 MiB and 64 MiB; leave it unset to keep 5 MiB. A
+deployment that relays full-size WIP-109 registration responses (about 20 MiB) needs
+`RESPONSE_BODY_LIMIT_BYTES=23068672` (22 MiB), and every proxy in front of the bridge must
+accept bodies of that size too. Stored responses live in Redis for the session TTL, so size
+Redis for the limit before raising it.
 
 Response uploads may include an optional `tracking_receipt` alongside `iv` and
 `payload`. The receipt remains opaque, expires with the response, and is never
